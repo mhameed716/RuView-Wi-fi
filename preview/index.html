@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#05070D" />
+  <title>RuView Wi-Fi — معاينة الواجهة</title>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+<body>
+  <div class="stage">
+    <div class="glow glow--cyan"></div>
+    <div class="glow glow--emerald"></div>
+
+    <!-- ═══════════════ الشاشة الأولى: لوحة التحكم ═══════════════ -->
+    <section class="screen is-active" id="screen-dashboard" aria-label="لوحة التحكم">
+      <header class="brand">
+        <div class="brand__logo">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-4.2-6.2 1.4 1.4a4 4 0 0 1 5.6 0l1.4-1.4a6 6 0 0 0-8.4 0Zm-3-3 1.4 1.4a8.2 8.2 0 0 1 11.6 0l1.4-1.4a10.2 10.2 0 0 0-14.4 0Zm-3-3 1.4 1.4a12.4 12.4 0 0 1 17.6 0L22 7.8a14.4 14.4 0 0 0-20.4 0Z"/></svg>
+        </div>
+        <div class="brand__text">
+          <h1>RuView Wi-Fi</h1>
+          <p>استشعار مكاني عبر الواي فاي — بدون كاميرات</p>
+        </div>
+        <span class="pill" id="status-pill-dashboard" data-tone="idle">
+          <i class="dot"></i><span id="status-text-dashboard">غير متصل</span>
+        </span>
+      </header>
+
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--cyan">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v3H4V6Zm0 5h16v3H4v-3Zm0 5h10v3H4v-3Z"/></svg>
+            </span>
+            <div>
+              <h2>إعدادات الاتصال</h2>
+              <p>أدخل عنوان بوابة RuView على شبكتك المحلية</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="field-row">
+          <label class="field field--host">
+            <span>عنوان IP للخادم</span>
+            <input id="input-host" type="text" inputmode="url" dir="ltr" placeholder="192.168.1.50" autocomplete="off" spellcheck="false" />
+          </label>
+          <label class="field field--port">
+            <span>المنفذ</span>
+            <input id="input-port" type="text" inputmode="numeric" dir="ltr" placeholder="8765" maxlength="5" />
+          </label>
+        </div>
+        <p class="field-error" id="form-error" hidden></p>
+
+        <p class="field-label">بروتوكول النقل</p>
+        <div class="transport">
+          <button class="transport__option is-selected" data-transport="websocket" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z"/></svg>
+            <span><b>WebSocket</b><small>بث JSON حي</small></span>
+          </button>
+          <button class="transport__option" data-transport="udp" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h16v8H4V8Zm2 2v4h4v-4H6Zm6 0v4h6v-4h-6Z"/></svg>
+            <span><b>UDP</b><small>حزم CSI مباشرة</small></span>
+          </button>
+        </div>
+
+        <button class="link-toggle" id="advanced-toggle" type="button" aria-expanded="false">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5H7Z"/></svg>
+          خيارات متقدمة
+        </button>
+        <div class="advanced" id="advanced-panel" hidden>
+          <label class="field">
+            <span>رمز الوصول (اختياري)</span>
+            <input id="input-token" type="password" dir="ltr" placeholder="RUVIEW_API_TOKEN إن كان مُفعّلًا" autocomplete="off" />
+          </label>
+          <label class="switch-row">
+            <input id="input-secure" type="checkbox" />
+            <span class="switch"></span>
+            <span>اتصال مشفّر (wss)</span>
+          </label>
+        </div>
+
+        <div class="alert" id="connection-alert" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 1 21h22L12 2Zm0 6 6.5 11h-13L12 8Zm-1 3v4h2v-4h-2Zm0 5v2h2v-2h-2Z"/></svg>
+          <div>
+            <b id="connection-alert-text">تعذّر الاتصال بالبوابة</b>
+            <small>تأكد من عنوان IP والمنفذ، وأن الهاتف متصل بنفس شبكة البوابة.</small>
+          </div>
+        </div>
+
+        <button class="btn btn--primary" id="connect-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm-4.2-6.2 1.4 1.4a4 4 0 0 1 5.6 0l1.4-1.4a6 6 0 0 0-8.4 0Zm-3-3 1.4 1.4a8.2 8.2 0 0 1 11.6 0l1.4-1.4a10.2 10.2 0 0 0-14.4 0Z"/></svg>
+          <span id="connect-button-label">اتصال</span>
+        </button>
+
+        <div class="chips">
+          <span class="chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16v12H4z"/></svg>الهدف <b id="chip-target">—</b></span>
+          <span class="chip" id="chip-uptime" hidden>مدة الاتصال <b id="uptime-value">00:00</b></span>
+          <span class="chip" id="chip-rate" hidden>معدل التحديث <b id="rate-value">0.0 Hz</b></span>
+        </div>
+      </div>
+
+      <h3 class="section-title">
+        <span class="icon icon--cyan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h4v4H3v-4Zm5-6h4v10H8V11Zm5-8h4v18h-4V3Zm5 5h4v13h-4V8Z"/></svg></span>
+        ملخص سريع
+      </h3>
+
+      <div class="grid">
+        <article class="tile" data-tone="idle" id="tile-system">
+          <div class="tile__head"><span class="tile__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 2h6v2h-1v2.2a6 6 0 0 1 3 5.2V20h2v2H5v-2h2v-8.6a6 6 0 0 1 3-5.2V4H9V2Z"/></svg></span><span>حالة النظام</span></div>
+          <strong id="tile-system-value">غير متصل</strong>
+          <small id="tile-system-caption">بانتظار أول حزمة بيانات</small>
+        </article>
+        <article class="tile" data-tone="cyan">
+          <div class="tile__head"><span class="tile__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l2 5 4-12 2 7h6v2h-7l-1.4-4.2L9.6 20H6.7L4.4 14H3v-2Z"/></svg></span><span>العقد النشطة</span></div>
+          <strong id="tile-nodes-value">0</strong>
+          <small id="tile-nodes-caption">لا توجد عقد متصلة</small>
+        </article>
+        <article class="tile" data-tone="idle" id="tile-presence">
+          <div class="tile__head"><span class="tile__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8Zm-8 16c0-3.3 3.6-6 8-6s8 2.7 8 6H4Z"/></svg></span><span>الحضور الآن</span></div>
+          <strong id="tile-presence-value">—</strong>
+          <small id="tile-presence-caption">بانتظار أول حزمة بيانات</small>
+        </article>
+        <article class="tile" data-tone="idle">
+          <div class="tile__head"><span class="tile__icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9h3v9H4Zm5 0V4h3v14H9Zm5 0v-6h3v6h-3Z"/></svg></span><span>جودة الإشارة</span></div>
+          <strong id="tile-quality-value">—</strong>
+          <small id="tile-quality-caption">بانتظار أول حزمة بيانات</small>
+          <div class="progress"><i id="tile-quality-bar" style="width:0%"></i></div>
+        </article>
+      </div>
+
+      <div class="card card--cta">
+        <div class="cta__head">
+          <span class="cta__badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Zm0-8a8 8 0 0 1 8 8h-2a6 6 0 0 0-12 0H4a8 8 0 0 1 8-8Z"/></svg></span>
+          <div>
+            <h2>لوحة الرصد</h2>
+            <p>رادار الحضور والعلامات الحيوية</p>
+          </div>
+          <svg class="cta__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m14 6-6 6 6 6"/></svg>
+        </div>
+        <button class="btn btn--primary" id="open-monitor" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-4 6h8v2H8v-2Z"/></svg>
+          الانتقال إلى لوحة الرصد
+        </button>
+      </div>
+
+      <p class="footnote"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2 4 6v6c0 5 3.4 9.3 8 10 4.6-.7 8-5 8-10V6l-8-4Z"/></svg> البيانات تبقى داخل شبكتك المحلية — بدون كاميرات أو سحابة</p>
+    </section>
+
+    <!-- ═══════════════ الشاشة الثانية: لوحة الرصد ═══════════════ -->
+    <section class="screen" id="screen-monitor" aria-label="لوحة الرصد">
+      <header class="monitor-head">
+        <button class="icon-btn" id="back-button" type="button" aria-label="رجوع">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+        </button>
+        <div class="monitor-head__text">
+          <h1>لوحة الرصد</h1>
+          <p id="monitor-endpoint">—</p>
+        </div>
+        <span class="pill" id="status-pill-monitor" data-tone="idle">
+          <i class="dot"></i><span id="status-text-monitor">غير متصل</span>
+        </span>
+      </header>
+
+      <div class="card radar-card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--emerald"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20Zm0 2a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 3a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3Zm-4 6h8v2H8v-2Z"/></svg></span>
+            <div>
+              <h2>رادار الحضور المكاني</h2>
+              <p>الموجات تُبيّن الحركة والتنفس داخل النطاق</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="radar">
+          <canvas id="radar-canvas" aria-label="رادار الحضور"></canvas>
+          <div class="radar__caption" id="radar-caption">
+            <strong id="radar-caption-value">—</strong>
+            <span id="radar-caption-title">لا توجد بيانات للرصد</span>
+            <small id="radar-caption-note"></small>
+          </div>
+        </div>
+
+        <div class="chips chips--center">
+          <span class="chip">الأشخاص <b id="chip-persons">0</b></span>
+          <span class="chip">جودة الإشارة <b id="chip-quality">—</b></span>
+          <span class="chip">RSSI <b id="chip-rssi">—</b></span>
+          <span class="chip">المصدر <b id="chip-source">—</b></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--emerald"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s-7-4.4-7-10a4.5 4.5 0 0 1 7-3.7A4.5 4.5 0 0 1 19 11c0 5.6-7 10-7 10Z"/></svg></span>
+            <div>
+              <h2>العلامات الحيوية</h2>
+              <p>قياسات لاتلامسية من تشويش موجات الواي فاي</p>
+            </div>
+          </div>
+          <span class="pill" id="breathing-pill" data-tone="idle"><span id="breathing-pill-text">غير متوفر</span></span>
+        </div>
+
+        <div class="vitals">
+          <div class="gauge">
+            <svg viewBox="0 0 132 132" aria-hidden="true">
+              <circle class="gauge__track" cx="66" cy="66" r="52"></circle>
+              <circle class="gauge__value" id="gauge-value" cx="66" cy="66" r="52"></circle>
+            </svg>
+            <div class="gauge__center">
+              <strong id="breathing-value">—</strong>
+              <small>نفس/دقيقة</small>
+            </div>
+          </div>
+          <div class="vitals__side">
+            <p class="vitals__label">معدل التنفس</p>
+            <p class="vitals__status" id="breathing-status">غير متوفر</p>
+            <svg class="sparkline" id="breathing-spark" viewBox="0 0 200 44" preserveAspectRatio="none" aria-hidden="true">
+              <path class="sparkline__fill" id="breathing-spark-fill" d=""></path>
+              <path class="sparkline__line" id="breathing-spark-line" d=""></path>
+            </svg>
+            <div class="vitals__metrics">
+              <div><span>درجة الثقة</span><b id="confidence-value">—</b></div>
+              <div><span>النبض</span><b id="heart-value">—</b></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="motion">
+          <div class="motion__head">
+            <span>شدة الحركة</span>
+            <b id="motion-value">0%</b>
+            <small id="motion-state">غير محدد</small>
+          </div>
+          <div class="progress progress--motion"><i id="motion-bar" style="width:0%"></i></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--cyan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22a2 2 0 0 0 2-2h-4a2 2 0 0 0 2 2Zm6-6v-5a6 6 0 0 0-5-5.9V4a1 1 0 0 0-2 0v1.1A6 6 0 0 0 6 11v5l-2 2v1h16v-1l-2-2Z"/></svg></span>
+            <div>
+              <h2>سجل الأنشطة والتنبيهات</h2>
+              <p id="events-caption">لا أحداث بعد</p>
+            </div>
+          </div>
+          <button class="icon-btn icon-btn--sm" id="clear-events" type="button" aria-label="مسح السجل">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 7h12l-1 13H7L6 7Zm3-3h6l1 2H8l1-2Z"/></svg>
+          </button>
+        </div>
+        <ul class="events" id="events-list"></ul>
+        <p class="events-empty" id="events-empty">لا توجد أحداث بعد — ابدأ الاتصال لعرض السجل</p>
+      </div>
+
+      <p class="footnote" id="monitor-footnote">آخر تحديث: —</p>
+      <p class="footnote footnote--tiny">معدل التنفس والشدة تقديرات استنتاجية من CSI وليست قياسًا طبيًا</p>
+    </section>
+  </div>
+
+  <script src="./app.js"></script>
+</body>
+</html>

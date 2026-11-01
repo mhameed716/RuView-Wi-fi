@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  flutter:
+    name: تحليل واختبار Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: تثبيت الحزم
+        run: flutter pub get
+
+      - name: التحليل الساكن
+        run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+
+      - name: الاختبارات
+        run: flutter test --no-pub
+
+      - name: تدقيق بنية Dart
+        run: python3 tools/check_dart_imports.py
+
+  tooling:
+    name: فحص أدوات Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: فحص الصياغة
+        run: |
+          node --check preview/app.js
+          node --check tools/mock_ruview_server.mjs
+
+      - name: توليد إطار تجريبي والتحقق من الحقول
+        run: |
+          node tools/mock_ruview_server.mjs --once > /tmp/frame.json
+          node -e "
+            const f = require('/tmp/frame.json');
+            const required = ['type','timestamp','nodes','features','classification','signal_field'];
+            for (const key of required) {
+              if (!(key in f)) { throw new Error('حقل ناقص: ' + key); }
+            }
+            if (f.type !== 'sensing_update') throw new Error('نوع الرسالة غير صحيح');
+            if (!Array.isArray(f.nodes) || f.nodes.length === 0) throw new Error('لا عقد في الإطار');
+            console.log('إطار صالح — عقد:', f.nodes.length, '| تصنيف:', f.classification.motion_level);
+          "

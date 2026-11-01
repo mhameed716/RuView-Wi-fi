@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  بوابة RuView تعمل داخل الشبكة المحلية عبر ws:// أو UDP غير مشفّرين.
+  نسمح بالنقل النصي (cleartext) لأن الاتصال لا يغادر شبكة المستخدم،
+  مع بقاء شهادات النظام موثوقة لمسارات wss:// الاختيارية.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
