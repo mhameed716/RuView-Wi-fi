@@ -41,9 +41,13 @@ jobs:
         run: |
           if [ ! -s /tmp/test.log ]; then echo "لا سجل اختبار"; exit 0; fi
           {
-            echo '### فشل اختبارات Flutter'
+            echo '### اختبارات فاشلة'
             echo '```'
-            tail -c 4000 /tmp/test.log
+            grep -E '\[E\]$' /tmp/test.log | sed 's#/home/runner/work/RuView-Wi-fi/RuView-Wi-fi/##' | head -20
+            echo '```'
+            echo '### تفاصيل'
+            echo '```'
+            grep -A22 '\[E\]$' /tmp/test.log | head -160
             echo '```'
           } > /tmp/body.md
           if [ -n "${{ github.event.pull_request.number }}" ]; then
