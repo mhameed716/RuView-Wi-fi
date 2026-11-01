@@ -60,6 +60,9 @@ lib/
     └── widgets/                  neon_card · neon_button · status_pill · summary_tile
                                   connection_settings_card · presence_radar
                                   vitals_panel · activity_log_panel · sparkline
+                                  posture_status_card · skeleton_view
+                                  emergency_banner · security_mode_card
+                                  sleep_vitals_panel · monitoring_dialogs
                                   app_background
 ```
 
@@ -73,9 +76,37 @@ lib/
    الناقصة) ثم تُبثّ على `frames`.
 4. `SensingViewModel` ينعّم التنفس (EMA بمعامل 0.22)، يحدّث حلقات الرسم،
    ويقيّم **قواعد الأحداث**، ثم `notifyListeners()`.
-5. الواجهة تعيد البناء عبر `ListenableBuilder` فقط، والرسوم المتحركة الثقيلة
-   (الرادار، العدّاد) تستخدم `AnimationController`/`TweenAnimationBuilder`
-   مستقلًا لتجنّب إعادة بناء الشجرة كاملة.
+5. بعد القواعد الأساسية يمرّ الإطار على `SafetyMonitor.ingest` الذي يشغّل
+   خمسة محرّكات في `lib/domain/monitoring/` ويعيد `List<SafetySignal>`
+   (وضعية، سقوط، تسلل، مشية، نوم/تنفس). كل إشارة تُترجم إلى `ActivityEvent`،
+   والإشارات الحرجة (`fall`/`intrusion`/`apnea`) تُرسَل أيضًا إلى
+   `AlertDispatcher` (اهتزاز + صوت + إشعار نظام).
+6. الواجهة تعيد البناء عبر `ListenableBuilder` فقط، والرسوم المتحركة الثقيلة
+   (الرادار، العدّاد، الهيكل العظمي) تستخدم `CustomPainter`/
+   `AnimationController` مستقلًا لتجنّب إعادة بناء الشجرة كاملة.
+
+## طبقة الرصد المتقدم (`lib/domain/monitoring/`)
+
+| المحرّك | القاعدة | الحالة المخزّنة |
+|---|---|---|
+| `PostureEstimator` | خادم ← شخص ← مفاصل ← حركة | — (نقي) |
+| `FallDetector` | وقوف/مشي ← أرض خلال ≤2 ث + حركة ≥0.55؛ تهدئة 15 ث | آخر وضعية مرتفعة |
+| `IntrusionDetector` | مفعّل + مرور 20 ث + حركة ≥0.22؛ تهدئة 30 ث | وقت التسليح/آخر تنبيه |
+| `GaitAnalyzer` | نافذة 12 ث من إطارات المشي، ≥15 عينة، تشابه جيب تمام | نافذة العينات |
+| `SleepMonitor` | استلقاء/سكون + تنفس؛ انقطاع 25 ث = اضطراب | جلسة + معدلات + جودة |
+
+`SafetyMonitor` هو المنسّق: يملك المحرّكات، يمنع وميض مطابقة المشية
+(`requiredGaitStreak`)، ويحتفظ بـ `SafetyState` غير القابل للتغيير الذي يعرضه
+`SensingViewModel` للواجهة (`posture`, `fallAlert`, `intrusionArmed`, `sleep`…).
+
+**الاستمرارية**: `MonitoringSettingsRepository` يحفظ وضع الحراسة، رقم
+الطوارئ، ومتجهات ميزات المشية (JSON) في `SharedPreferences` فقط — لا صور ولا
+تسجيلات.
+
+**القنوات الأصلية (أندرويد)**: قناتان بسيطتان في `MainActivity.kt` بدل حزم
+ثقيلة: `ruview/alerts` (إشعار نظام + إذن أندرويد 13) و`ruview/emergency`
+(`ACTION_DIAL`). كل استدعاء «فاشل بأمان»: عند غياب القناة يُكتفى بالتنبيه
+المرئي/الاهتزاز أو بنسخ الرقم.
 
 ## قواعد الأحداث (`activity_rules.dart`)
 
@@ -112,6 +143,14 @@ test/
 ├── services/csi_analyzer_test.dart       فكّ إطار ESP32 الثنائي + الحضور
 ├── presentation/activity_rules_test.dart قواعد الأحداث والحرّاس الزمنية
 ├── presentation/sensing_view_model_test.dart  التنعيم، الحضور، السجل
+├── domain/posture_estimator_test.dart    أولوية مصادر الوضعية + المفاصل
+├── domain/fall_detector_test.dart        نافذة السقوط + العتبات + التهدئة
+├── domain/intrusion_detector_test.dart   التسليح + التهدئة + المنطقة
+├── domain/gait_analyzer_test.dart        النافذة + المتجه + التشابه
+├── domain/sleep_monitor_test.dart        النوم العميق + انقطاع النفس + الجودة
+├── domain/safety_monitor_test.dart       دمج المحرّكات + الإشارات
+├── services/monitoring_settings_repository_test.dart  الحفظ والقراءة
+├── widget/monitoring_widgets_test.dart   بطاقات الوضعية/النوم/الحراسة/الطوارئ
 └── widget/dashboard_flow_test.dart       نصوص عربية + RTL + التنقل
 ```
 
@@ -126,5 +165,8 @@ flutter test
   `ConnectionSettings.authHeaders`.
 - **دعم رسم مجال الإشارة**: `SensingFrame.signalField` مقروء بالفعل (شبكة + قيم)
   وينتظر فقط `CustomPainter` لخريطة حرارية.
-- **إشعارات محلية**: `SensingViewModel.events` هو المكان الطبيعي لربط
-  `flutter_local_notifications` عند حدث حرج (سقوط/انقطاع تنفس).
+- **إشعارات محلية غنية**: القناة الأصلية `ruview/alerts` تكفي للإشعارات
+  الحرجة؛ عند الحاجة إلى إجراءات/صور يمكن استبدالها بـ
+  `flutter_local_notifications` دون تغيير الواجهة.
+- **تعريف بيومتري أدق**: استبدال `GaitAnalyzer` بنموذج تعلّم آلي على متجهات
+  CSI متعددة العقد مع الحفاظ على واجهة `GaitFeatureVector` نفسها.

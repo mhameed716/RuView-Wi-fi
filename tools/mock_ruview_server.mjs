@@ -151,6 +151,27 @@ function buildSensingUpdate() {
     }
   }
 
+  // الوضعية الحالية للنموذج + مفاصل COCO 17 لاختبار رسم الهيكل والتقدير.
+  const posture = !presence ? 'unknown' : moving ? 'walking' : 'sitting';
+  const sway = Math.sin(state.tick / 18) * 0.015;
+  const SKELETONS = {
+    standing: [[0.5, 0.1], [0.47, 0.08], [0.53, 0.08], [0.46, 0.09], [0.54, 0.09], [0.42, 0.24], [0.58, 0.24], [0.4, 0.36], [0.6, 0.36], [0.39, 0.46], [0.61, 0.46], [0.45, 0.52], [0.55, 0.52], [0.46, 0.72], [0.54, 0.72], [0.47, 0.92], [0.53, 0.92]],
+    walking: [[0.5, 0.1], [0.47, 0.08], [0.53, 0.08], [0.46, 0.09], [0.54, 0.09], [0.42, 0.24], [0.58, 0.24], [0.4, 0.34], [0.6, 0.36], [0.38, 0.44], [0.62, 0.46], [0.45, 0.52], [0.55, 0.52], [0.4, 0.72], [0.6, 0.7], [0.36, 0.92], [0.64, 0.9]],
+    sitting: [[0.5, 0.16], [0.47, 0.14], [0.53, 0.14], [0.46, 0.15], [0.54, 0.15], [0.43, 0.3], [0.57, 0.3], [0.41, 0.42], [0.59, 0.42], [0.44, 0.52], [0.56, 0.52], [0.45, 0.6], [0.55, 0.6], [0.46, 0.66], [0.54, 0.66], [0.48, 0.86], [0.52, 0.86]],
+    lying: [[0.14, 0.58], [0.15, 0.56], [0.15, 0.6], [0.13, 0.58], [0.13, 0.6], [0.32, 0.6], [0.32, 0.64], [0.46, 0.6], [0.46, 0.65], [0.52, 0.6], [0.52, 0.65], [0.62, 0.61], [0.62, 0.66], [0.78, 0.61], [0.78, 0.67], [0.92, 0.61], [0.92, 0.68]],
+  };
+  const JOINT_NAMES = ['nose', 'left_eye', 'right_eye', 'left_ear', 'right_ear', 'left_shoulder', 'right_shoulder', 'left_elbow', 'right_elbow', 'left_wrist', 'right_wrist', 'left_hip', 'right_hip', 'left_knee', 'right_knee', 'left_ankle', 'right_ankle'];
+  const keypoints =
+    posture === 'unknown'
+      ? []
+      : SKELETONS[posture].map(([x, y], index) => ({
+          name: JOINT_NAMES[index],
+          x: round(x + sway, 3),
+          y: round(y, 3),
+          z: 0,
+          confidence: round(Math.min(0.99, 0.88 + noise(0.05)), 2),
+        }));
+
   const persons = presence
     ? [
         {
@@ -164,7 +185,8 @@ function buildSensingUpdate() {
             round(3.1 + Math.cos(state.tick / 55) * 1.1, 2),
           ],
           motion_score: round(moving ? 62 + noise(12) : 14 + noise(5), 1),
-          keypoints: [],
+          pose: posture,
+          keypoints,
         },
       ]
     : [];
@@ -200,7 +222,7 @@ function buildSensingUpdate() {
         }
       : undefined,
     enhanced_motion: { phase, presence, moving },
-    posture: presence ? (moving ? 'walking' : 'sitting') : undefined,
+    posture: posture === 'unknown' ? undefined : posture,
     signal_quality_score: round(signalQuality, 2),
     quality_verdict: signalQuality > 0.6 ? 'good' : signalQuality > 0.35 ? 'fair' : 'poor',
     estimated_persons: presence ? 1 : 0,

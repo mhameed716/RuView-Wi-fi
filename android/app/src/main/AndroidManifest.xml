@@ -5,6 +5,10 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- استقبال حزم UDP المُبثّة (broadcast) من عُقد ESP32 -->
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- اهتزاز الهاتف عند تنبيه السقوط/التسلل -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- إشعارات أندرويد 13+ لتنبيهات الأمان الحرجة -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:label="RuView Wi-Fi"

@@ -38,6 +38,8 @@ void main() {
     expect(find.text('عنوان IP للخادم'), findsOneWidget);
     expect(find.text('المنفذ'), findsOneWidget);
     expect(find.text('ملخص سريع'), findsOneWidget);
+    expect(find.text('وضع الحراسة الأمنية'), findsOneWidget);
+    expect(find.text('اتصال (997)'), findsOneWidget);
     expect(find.text('العقد النشطة'), findsOneWidget);
     expect(find.text('جودة الإشارة'), findsOneWidget);
     expect(find.text('الانتقال إلى لوحة الرصد'), findsOneWidget);
@@ -80,7 +82,9 @@ void main() {
     expect(find.text('رادار الحضور المكاني'), findsOneWidget);
     expect(find.text('العلامات الحيوية'), findsOneWidget);
     expect(find.text('سجل الأنشطة والتنبيهات'), findsOneWidget);
-    expect(find.text('معدل التنفس'), findsOneWidget);
+    expect(find.text('الحالة الحالية'), findsOneWidget);
+    expect(find.text('النوم والعلامات الحيوية'), findsOneWidget);
+    expect(find.text('معدل التنفس'), findsWidgets);
     expect(find.text('شدة الحركة'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());

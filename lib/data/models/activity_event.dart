@@ -7,6 +7,11 @@ enum ActivityKind {
   motion('حركة'),
   breathing('تنفس'),
   signal('إشارة'),
+  posture('وضعية'),
+  gait('مشية'),
+  fall('سقوط'),
+  security('أمني'),
+  sleep('نوم'),
   system('نظام');
 
   const ActivityKind(this.arabicLabel);

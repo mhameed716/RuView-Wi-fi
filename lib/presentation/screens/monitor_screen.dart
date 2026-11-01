@@ -8,15 +8,21 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/num_utils.dart';
+import '../../data/models/gait_profile.dart';
 import '../../data/models/sensing_frame.dart';
+import '../../domain/monitoring/safety_state.dart';
 import '../app_scope.dart';
 import '../viewmodels/connection_view_model.dart';
 import '../viewmodels/sensing_view_model.dart';
 import '../widgets/activity_log_panel.dart';
 import '../widgets/app_background.dart';
+import '../widgets/emergency_banner.dart';
+import '../widgets/monitoring_dialogs.dart';
 import '../widgets/neon_button.dart';
 import '../widgets/neon_card.dart';
+import '../widgets/posture_status_card.dart';
 import '../widgets/presence_radar.dart';
+import '../widgets/sleep_vitals_panel.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/vitals_panel.dart';
 
@@ -39,6 +45,8 @@ class MonitorScreen extends StatelessWidget {
             listenable: Listenable.merge(<Listenable>[connection, sensing]),
             builder: (BuildContext context, Widget? child) {
               final SensingFrame? frame = sensing.latestFrame;
+              final FallAlert? fallAlert = sensing.fallAlert;
+              final IntrusionAlert? intrusionAlert = sensing.intrusionAlert;
 
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -46,7 +54,27 @@ class MonitorScreen extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: <Widget>[
-                    _MonitorHeader(connection: connection),
+                    if (fallAlert != null) ...<Widget>[
+                      EmergencyBanner(
+                        alert: fallAlert,
+                        emergencyNumber: sensing.emergencyNumber,
+                        onDismiss: sensing.acknowledgeFall,
+                        onCall: () =>
+                            unawaited(callEmergency(context, sensing)),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    _MonitorHeader(
+                      connection: connection,
+                      armed: sensing.intrusionArmed,
+                    ),
+                    if (intrusionAlert != null) ...<Widget>[
+                      const SizedBox(height: 10),
+                      IntrusionStrip(
+                        alert: intrusionAlert,
+                        onDismiss: sensing.acknowledgeIntrusion,
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     if (!connection.isConnected) ...<Widget>[
                       _OfflineBanner(onRetry: connection.connect),
@@ -118,6 +146,21 @@ class MonitorScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    PostureStatusCard(
+                      posture: sensing.posture,
+                      source: sensing.postureSource,
+                      confidence: sensing.safety.postureConfidence,
+                      keypoints: sensing.poseKeypoints,
+                      hasSkeleton: sensing.hasSkeleton,
+                      hasData: sensing.hasData,
+                      gaitMatch: sensing.gaitMatch,
+                      gaitProfiles: sensing.gaitProfiles,
+                      gaitCollecting: sensing.gaitCollecting,
+                      onEnroll: () => unawaited(_enrollGait(context, sensing)),
+                      onRemoveProfile: (GaitProfile profile) =>
+                          unawaited(sensing.removeGaitProfile(profile.id)),
+                    ),
+                    const SizedBox(height: 14),
                     VitalsPanel(
                       breathingRate: sensing.breathingRate,
                       breathingStatus: sensing.breathingStatus,
@@ -129,6 +172,12 @@ class MonitorScreen extends StatelessWidget {
                       heartRate: sensing.vitalSigns?.hasHeartRate ?? false
                           ? sensing.vitalSigns?.heartRateBpm
                           : null,
+                      hasData: sensing.hasData,
+                    ),
+                    const SizedBox(height: 14),
+                    SleepVitalsPanel(
+                      summary: sensing.sleep,
+                      breathingHistory: sensing.breathingHistory,
                       hasData: sensing.hasData,
                     ),
                     const SizedBox(height: 14),
@@ -149,10 +198,28 @@ class MonitorScreen extends StatelessWidget {
   }
 }
 
+/// تسجيل بصمة مشية جديدة بعد سؤال المستخدم عن الاسم.
+Future<void> _enrollGait(
+  BuildContext context,
+  SensingViewModel sensing,
+) async {
+  final String? name = await showGaitEnrollDialog(context);
+  if (name == null || !context.mounted) return;
+  final bool saved = await sensing.enrollGait(name);
+  if (!context.mounted) return;
+  showMonitorSnack(
+    context,
+    saved
+        ? 'تم حفظ بصمة المشية بنجاح'
+        : 'لم تكتمل نافذة العينات — امشِ بشكل متواصل 12 ثانية ثم أعد المحاولة',
+  );
+}
+
 class _MonitorHeader extends StatelessWidget {
-  const _MonitorHeader({required this.connection});
+  const _MonitorHeader({required this.connection, required this.armed});
 
   final ConnectionViewModel connection;
+  final bool armed;
 
   @override
   Widget build(BuildContext context) {
@@ -189,6 +256,15 @@ class _MonitorHeader extends StatelessWidget {
             ],
           ),
         ),
+        if (armed) ...<Widget>[
+          const StatusPill(
+            label: 'حراسة',
+            color: AppColors.warning,
+            icon: Icons.shield_rounded,
+            compact: true,
+          ),
+          const SizedBox(width: 6),
+        ],
         StatusPill(
           label: connection.statusLabel,
           color: live

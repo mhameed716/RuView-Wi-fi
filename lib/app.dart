@@ -41,6 +41,8 @@ class _RuViewAppState extends State<RuViewApp> {
     );
     _sensingViewModel = SensingViewModel(repository: _sensingRepository);
     unawaited(_connectionViewModel.initialize());
+    // تحميل وضع الحراسة المحفوظ، وبصمات المشية، ورقم الطوارئ.
+    unawaited(_sensingViewModel.initialize());
   }
 
   @override

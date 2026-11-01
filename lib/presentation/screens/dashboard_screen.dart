@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../core/l10n/ar_strings.dart';
@@ -12,7 +14,10 @@ import '../viewmodels/sensing_view_model.dart';
 import '../widgets/app_background.dart';
 import '../widgets/connection_settings_card.dart';
 import '../widgets/neon_button.dart';
+import '../widgets/monitoring_dialogs.dart';
 import '../widgets/neon_card.dart';
+import '../widgets/posture_status_card.dart';
+import '../widgets/security_mode_card.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/summary_tile.dart';
 
@@ -54,6 +59,21 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 18),
                     ConnectionSettingsCard(viewModel: connection),
+                    const SizedBox(height: 14),
+                    SecurityModeCard(
+                      armed: sensing.intrusionArmed,
+                      lastIntrusionAt: sensing.lastIntrusionAt,
+                      incidentCount: sensing.securityIncidentCount,
+                      emergencyNumber: sensing.emergencyNumber,
+                      intrusionAlert: sensing.intrusionAlert,
+                      onDismissAlert: sensing.acknowledgeIntrusion,
+                      onArmedChanged: (bool value) =>
+                          unawaited(sensing.setIntrusionArmed(value)),
+                      onEditNumber: () =>
+                          unawaited(editEmergencyNumber(context, sensing)),
+                      onCallEmergency: () =>
+                          unawaited(callEmergency(context, sensing)),
+                    ),
                     const SizedBox(height: 20),
                     const SectionHeader(
                       title: 'ملخص سريع',
@@ -157,6 +177,20 @@ class _SummaryGrid extends StatelessWidget {
                 tone: sensing.hasPresence ? AppColors.emerald : AppColors.idle,
                 caption: sensing.hasData
                     ? 'شدة الحركة: ${NumUtils.percent(sensing.motionIntensity)}'
+                    : ArStrings.noDataYet,
+              ),
+            ),
+            SizedBox(
+              width: itemWidth,
+              child: SummaryTile(
+                icon: PostureStatusCard.iconFor(sensing.posture),
+                label: 'الوضعية الحالية',
+                value: sensing.hasData
+                    ? sensing.posture.arabicLabel
+                    : '—',
+                tone: PostureStatusCard.colorFor(sensing.posture),
+                caption: sensing.hasData
+                    ? 'المصدر: ${sensing.postureSource.arabicLabel}'
                     : ArStrings.noDataYet,
               ),
             ),

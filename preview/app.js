@@ -83,6 +83,27 @@
     monitorFootnote: document.getElementById('monitor-footnote'),
     back: document.getElementById('back-button'),
     openMonitor: document.getElementById('open-monitor'),
+    // الرصد المتقدم
+    postureCard: document.querySelector('.posture-card'),
+    postureGlyph: document.getElementById('posture-glyph'),
+    postureLabel: document.getElementById('posture-label'),
+    posturePill: document.getElementById('posture-pill'),
+    postureNote: document.getElementById('posture-note'),
+    sleepPill: document.getElementById('sleep-pill'),
+    sleepQuality: document.getElementById('sleep-quality'),
+    sleepBreathing: document.getElementById('sleep-breathing'),
+    sleepVariability: document.getElementById('sleep-variability'),
+    sleepApnea: document.getElementById('sleep-apnea'),
+    sleepSession: document.getElementById('sleep-session'),
+    securityCard: document.querySelector('.security-card'),
+    securityToggle: document.getElementById('security-toggle'),
+    securityNote: document.getElementById('security-note'),
+    securityLast: document.getElementById('security-last'),
+    securityCount: document.getElementById('security-count'),
+    emergencyBanner: document.getElementById('emergency-banner'),
+    emergencyNote: document.getElementById('emergency-note'),
+    emergencyCall: document.getElementById('emergency-call'),
+    emergencyDismiss: document.getElementById('emergency-dismiss'),
   };
 
   const GAUGE_CIRCUMFERENCE = 2 * Math.PI * 52; // r = 52
@@ -113,6 +134,32 @@
     radarBlips: [],
     mode: 'idle', // idle | live | demo
     autoConnect: false,
+    // حالة الرصد المتقدم — نفس منطق SafetyMonitor في تطبيق Flutter.
+    safety: {
+      posture: 'unknown',
+      postureSource: '—',
+      postureConfidence: 0,
+      uprightAt: 0,
+      uprightPosture: 'unknown',
+      fall: null,
+      fallCooldownUntil: 0,
+      armed: false,
+      armedAt: 0,
+      lastIntrusionAt: 0,
+      incidents: 0,
+      sleep: {
+        start: 0,
+        lastBreath: 0,
+        lastApnea: 0,
+        apnea: 0,
+        samples: [],
+        state: 'absent',
+        quality: 0,
+        session: 0,
+        avg: null,
+        variability: 0,
+      },
+    },
   };
 
   // ── أدوات ───────────────────────────────────────────────────────────────
@@ -175,6 +222,12 @@
     signal: 'M4 18V9h3v9H4Zm5 0V4h3v14H9Zm5 0v-6h3v6h-3Z',
     system:
       'M9 2h6v2h-1v2.2a6 6 0 0 1 3 5.2V20h2v2H5v-2h2v-8.6a6 6 0 0 1 3-5.2V4H9V2Z',
+    posture:
+      'M12 4a2 2 0 1 1 0 4 2 2 0 0 1 0-4Zm-1 5h2l3 3-1.4 1.4L13 11.8V15l2.6 4.2-1.7 1L11 16 8 20.5l-1.7-1L10 14V9l1-1Z',
+    gait: 'M13 2 4 14h6l-1 8 9-12h-6l1-8Z',
+    fall: 'M12 2 1 21h22L12 2Zm1 13h-2v2h2v-2Zm0-6h-2v5h2V9Z',
+    security: 'M12 2 4 5.5V11c0 5.4 3.4 10.2 8 11.5 4.6-1.3 8-6.1 8-11.5V5.5L12 2Z',
+    sleep: 'M4 5h8L4 15h8v4H2v-3L10 6H4V5Zm11-3h7v3l-4 5h4v3h-7v-3l4-5h-4V2Z',
   };
 
   const TONE_COLORS = {
@@ -483,7 +536,22 @@
     const presence = cycle > 30 && cycle < 350;
     const moving = (cycle > 60 && cycle < 130) || (cycle > 230 && cycle < 290);
     const breathe = 14.5 + Math.sin(tick / 40) * 1.8 + (Math.random() - 0.5) * 0.4;
-    const motionPower = moving ? 0.9 + Math.random() * 0.5 : presence ? 0.14 + Math.random() * 0.08 : 0.02;
+    // محاكاة سقوط قصيرة كل دورة: وضعية استلقاء مع طاقة حركة عالية.
+    const falling = presence && cycle >= 300 && cycle < 303;
+    const posture = !presence
+      ? 'unknown'
+      : cycle >= 300
+        ? 'lying'
+        : moving
+          ? 'walking'
+          : 'sitting';
+    const motionPower = falling
+      ? 0.95
+      : moving
+        ? 0.9 + Math.random() * 0.5
+        : presence
+          ? 0.14 + Math.random() * 0.08
+          : 0.02;
 
     return {
       type: 'sensing_update',
@@ -519,6 +587,7 @@
           }
         : undefined,
       signal_quality_score: 0.78,
+      posture,
       estimated_persons: presence ? 1 : 0,
       persons: presence
         ? [
@@ -527,6 +596,7 @@
               confidence: 0.9,
               position: [2.6 + Math.sin(tick / 45) * 1.2, 0, 3 + Math.cos(tick / 60) * 1.2],
               motion_score: moving ? 68 : 14,
+              pose: posture,
               keypoints: [],
             },
           ]
@@ -578,8 +648,243 @@
       if (state.breathingHistory.length > 48) state.breathingHistory.shift();
     }
 
+    evaluateSafety(frame);
     evaluateRules(state.prevFrame, frame);
     render();
+  }
+
+  // ── الرصد المتقدم: الوضعية / السقوط / الحراسة / النوم ──────────────────
+  const POSTURE_META = {
+    standing: { label: 'واقف', icon: '🧍', tone: 'ok' },
+    sitting: { label: 'جالس', icon: '🪑', tone: 'active' },
+    lying: { label: 'مستلقٍ', icon: '🛌', tone: 'active' },
+    walking: { label: 'يمشي', icon: '🚶', tone: 'ok' },
+    bending: { label: 'ينحني', icon: '🙇', tone: 'warning' },
+    fallen: { label: 'سقوط', icon: '🚨', tone: 'danger' },
+    unknown: { label: 'غير محدد', icon: '❔', tone: 'idle' },
+  };
+
+  const POSTURE_ALIASES = {
+    stand: 'standing',
+    upright: 'standing',
+    vertical: 'standing',
+    sit: 'sitting',
+    seated: 'sitting',
+    chair: 'sitting',
+    on_chair: 'sitting',
+    lie: 'lying',
+    lying_down: 'lying',
+    supine: 'lying',
+    on_bed: 'lying',
+    sleeping: 'lying',
+    walk: 'walking',
+    strolling: 'walking',
+    bend: 'bending',
+    crouch: 'bending',
+    kneeling: 'bending',
+    fall: 'fallen',
+    fallen: 'fallen',
+    fall_detected: 'fallen',
+    collapsed: 'fallen',
+    on_floor: 'fallen',
+  };
+
+  function normalizePosture(value) {
+    if (!value) return 'unknown';
+    const key = String(value).toLowerCase().trim().replace(/[\s-]+/g, '_');
+    if (POSTURE_META[key]) return key;
+    return POSTURE_ALIASES[key] || 'unknown';
+  }
+
+  function postureFrom(frame) {
+    if (!frame) return { posture: 'unknown', source: '—', confidence: 0 };
+    const server = normalizePosture(frame.posture);
+    if (server !== 'unknown') {
+      return {
+        posture: server,
+        source: 'الخادم',
+        confidence: Math.max(0.6, Number(frame.classification.confidence) || 0),
+      };
+    }
+    for (const person of frame.persons) {
+      const personPosture = normalizePosture(person.pose);
+      if (personPosture !== 'unknown') {
+        return {
+          posture: personPosture,
+          source: 'الخادم',
+          confidence: clamp01(Number(person.confidence) || 0.6),
+        };
+      }
+    }
+    if (!frame.classification.presence) {
+      return { posture: 'unknown', source: '—', confidence: 0 };
+    }
+    if (/moving|active/.test(frame.classification.motion_level)) {
+      return {
+        posture: 'walking',
+        source: 'الحركة',
+        confidence: clamp01(Number(frame.classification.confidence) * 0.6),
+      };
+    }
+    return { posture: 'unknown', source: '—', confidence: 0 };
+  }
+
+  function raiseFall(now, confidence, reason) {
+    const safety = state.safety;
+    if (safety.fallCooldownUntil && now < safety.fallCooldownUntil) return;
+    safety.fallCooldownUntil = now + 15000;
+    safety.fall = { at: now, confidence: clamp01(confidence), reason };
+    safety.uprightAt = 0;
+    addEvent({
+      kind: 'fall',
+      title: '⚠️ تنبيه طارئ: تم رصد حالة سقوط',
+      detail: `${reason} — الثقة ${Math.round(confidence * 100)}%`,
+      tone: 'danger',
+    });
+    if (navigator.vibrate) navigator.vibrate([240, 120, 240]);
+  }
+
+  function resetSleep(sleep) {
+    sleep.start = 0;
+    sleep.lastBreath = 0;
+    sleep.lastApnea = 0;
+    sleep.apnea = 0;
+    sleep.samples.length = 0;
+    sleep.state = 'absent';
+    sleep.quality = 0;
+    sleep.session = 0;
+    sleep.avg = null;
+    sleep.variability = 0;
+  }
+
+  function evaluateSafety(frame) {
+    const safety = state.safety;
+    const now = nowMs();
+    const estimate = postureFrom(frame);
+    const posture = estimate.posture;
+    const motion = motionIntensity(frame);
+    const presence = frame.classification.presence || frame.persons.length > 0;
+
+    // الوضعية الحالية
+    if (posture !== safety.posture) {
+      if (posture !== 'unknown') {
+        addEvent({
+          kind: 'posture',
+          title: `الحالة الحالية: ${POSTURE_META[posture].label}`,
+          detail: `المصدر: ${estimate.source}`,
+          tone: POSTURE_META[posture].tone,
+        });
+      }
+      safety.posture = posture;
+      safety.postureSource = estimate.source;
+      safety.postureConfidence = estimate.confidence;
+    }
+
+    // السقوط
+    const serverFall = [frame.posture, ...frame.persons.map((person) => person.pose)].some(
+      (value) => normalizePosture(value) === 'fallen',
+    );
+    const upright = ['standing', 'walking', 'sitting', 'bending'];
+    const low = ['lying', 'fallen'];
+    if (serverFall) {
+      raiseFall(now, 0.95, 'أبلغ خادم RuView عن سقوط');
+    } else if (upright.includes(posture)) {
+      safety.uprightAt = now;
+      safety.uprightPosture = posture;
+    } else if (
+      low.includes(posture) &&
+      safety.uprightAt &&
+      now - safety.uprightAt <= 2000 &&
+      motion >= 0.55
+    ) {
+      const fromStanding =
+        safety.uprightPosture === 'standing' || safety.uprightPosture === 'walking';
+      if (fromStanding || motion >= 0.75) {
+        raiseFall(
+          now,
+          0.55 + motion * 0.3,
+          `انتقال سريع من ${POSTURE_META[safety.uprightPosture].label} إلى ${
+            POSTURE_META[posture].label
+          }`,
+        );
+      }
+    }
+
+    // وضع الحراسة الأمنية
+    if (safety.armed) {
+      const armedFor = now - safety.armedAt;
+      if (
+        armedFor >= 20000 &&
+        (presence || motion >= 0.22) &&
+        now - safety.lastIntrusionAt >= 30000
+      ) {
+        safety.lastIntrusionAt = now;
+        safety.incidents += 1;
+        addEvent({
+          kind: 'security',
+          title: '🚨 حركة مرصودة في وضع الحراسة',
+          detail: `شدة الحركة ${Math.round(motion * 100)}%`,
+          tone: 'danger',
+        });
+      }
+    }
+
+    // النوم والعلامات الحيوية
+    const sleep = safety.sleep;
+    const bpm = frame.vitalSigns ? Number(frame.vitalSigns.breathing_rate_bpm) : NaN;
+    const hasBreathing = Number.isFinite(bpm) && bpm > 0;
+    const inBed = presence && (posture === 'lying' || (hasBreathing && motion < 0.28));
+    if (!inBed) {
+      resetSleep(sleep);
+      return;
+    }
+
+    if (!sleep.start) sleep.start = now;
+    if (hasBreathing) {
+      sleep.samples.push(bpm);
+      if (sleep.samples.length > 600) sleep.samples.shift();
+      sleep.lastBreath = now;
+    }
+    sleep.session = now - sleep.start;
+
+    if (
+      sleep.lastBreath &&
+      now - sleep.lastBreath >= 25000 &&
+      (!sleep.lastApnea || now - sleep.lastApnea >= 45000)
+    ) {
+      sleep.apnea += 1;
+      sleep.lastApnea = now;
+      addEvent({
+        kind: 'sleep',
+        title: 'اضطراب تنفس محتمل أثناء النوم',
+        detail: 'انقطعت إشارة التنفس أكثر من 25 ثانية',
+        tone: 'warning',
+      });
+    }
+
+    const count = sleep.samples.length;
+    const avg = count
+      ? sleep.samples.reduce((sum, value) => sum + value, 0) / count
+      : null;
+    let variability = 0;
+    if (count >= 3) {
+      const variance =
+        sleep.samples.reduce((sum, value) => sum + (value - avg) ** 2, 0) / count;
+      variability = Math.sqrt(variance);
+    }
+    const apneaRecent = sleep.lastApnea && now - sleep.lastApnea <= 25000;
+    let stateName = 'light';
+    if (motion >= 0.5) stateName = 'awake';
+    else if (apneaRecent || variability > 3.5) stateName = 'disturbed';
+    else if (variability > 0 && variability <= 1.2 && motion < 0.12 && sleep.session >= 60000)
+      stateName = 'deep';
+
+    sleep.state = stateName;
+    sleep.avg = avg;
+    sleep.variability = variability;
+    sleep.quality = Math.round(
+      clamp01((100 - variability * 7 - motion * 45 - sleep.apnea * 12) / 100) * 100,
+    );
   }
 
   function evaluateRules(prev, frame) {
@@ -824,6 +1129,7 @@
         : '—';
 
     renderSparkline();
+    renderSafety();
 
     const motion = motionIntensity(frame);
     els.motionValue.textContent = pct(motion);
@@ -872,6 +1178,58 @@
       blips.push({ dx: 0.16, dy: -0.22, strength: 0.6 });
     }
     return blips;
+  }
+
+  function renderSafety() {
+    const safety = state.safety;
+    const meta = POSTURE_META[safety.posture] || POSTURE_META.unknown;
+    const hasFrame = Boolean(state.frame);
+    els.postureCard.dataset.tone = hasFrame ? meta.tone : 'idle';
+    els.postureGlyph.textContent = hasFrame ? meta.icon : '❔';
+    els.postureLabel.textContent = hasFrame ? meta.label : 'بانتظار البيانات';
+    els.posturePill.textContent = hasFrame ? meta.label : 'بانتظار البيانات';
+    els.posturePill.dataset.tone = hasFrame ? meta.tone : 'idle';
+    els.postureNote.textContent = hasFrame
+      ? `المصدر: ${safety.postureSource} • الثقة ${Math.round(safety.postureConfidence * 100)}%`
+      : 'ابدأ الاتصال ليقوم التطبيق بتقدير الوضعية';
+
+    const sleep = safety.sleep;
+    const sleepMeta =
+      {
+        absent: ['بانتظار الاستلقاء', 'idle'],
+        awake: ['مستيقظ/حركة', 'active'],
+        light: ['نوم خفيف', 'active'],
+        deep: ['نوم عميق', 'ok'],
+        disturbed: ['اضطراب تنفس', 'warning'],
+      }[sleep.state] || ['بانتظار الاستلقاء', 'idle'];
+    els.sleepPill.textContent = sleepMeta[0];
+    els.sleepPill.dataset.tone = sleepMeta[1];
+    els.sleepQuality.textContent = sleep.start ? `${sleep.quality}%` : '—';
+    els.sleepBreathing.textContent =
+      sleep.avg === null ? '—' : `${sleep.avg.toFixed(1)} /دقيقة`;
+    els.sleepVariability.textContent =
+      sleep.samples.length >= 3 ? `± ${sleep.variability.toFixed(1)}` : '—';
+    els.sleepApnea.textContent = String(sleep.apnea);
+    els.sleepSession.textContent = sleep.start
+      ? formatDuration(sleep.session)
+      : '00:00';
+
+    els.securityToggle.setAttribute('aria-checked', String(safety.armed));
+    if (els.securityCard) els.securityCard.classList.toggle('is-armed', safety.armed);
+    els.securityNote.textContent = safety.armed
+      ? 'مفعّل — أي حركة تُسجَّل وتُرسل كإشعار'
+      : 'معطّل — لن تُسجَّل الأنشطة الأمنية';
+    els.securityLast.textContent = safety.lastIntrusionAt
+      ? relativeTime(safety.lastIntrusionAt)
+      : 'لا يوجد';
+    els.securityCount.textContent = String(safety.incidents);
+
+    els.emergencyBanner.hidden = !safety.fall;
+    if (safety.fall) {
+      els.emergencyNote.textContent = `${safety.fall.reason} • الثقة ${Math.round(
+        safety.fall.confidence * 100,
+      )}% • ${relativeTime(safety.fall.at)}`;
+    }
   }
 
   function renderSparkline() {
@@ -1099,6 +1457,35 @@
   els.clearEvents.addEventListener('click', () => {
     state.events = [];
     renderEvents();
+  });
+
+  els.securityToggle.addEventListener('click', () => {
+    const safety = state.safety;
+    safety.armed = !safety.armed;
+    safety.armedAt = nowMs();
+    if (!safety.armed) safety.lastIntrusionAt = 0;
+    addEvent({
+      kind: 'security',
+      title: safety.armed ? 'تم تفعيل وضع الحراسة الأمنية' : 'تم إيقاف وضع الحراسة',
+      detail: safety.armed ? 'أي حركة بعد 20 ثانية ستُعتبر تسللًا' : null,
+      tone: safety.armed ? 'warning' : 'idle',
+    });
+    render();
+  });
+
+  els.emergencyDismiss.addEventListener('click', () => {
+    if (!state.safety.fall) return;
+    state.safety.fall = null;
+    addEvent({ kind: 'fall', title: 'أُلغي إنذار السقوط يدويًا', tone: 'ok' });
+    render();
+  });
+
+  els.emergencyCall.addEventListener('click', () => {
+    addEvent({
+      kind: 'security',
+      title: 'فُتح تطبيق الهاتف على رقم الطوارئ 997',
+      tone: 'warning',
+    });
   });
 
   // تحديث نسبي للأوقات وعدّاد المدة

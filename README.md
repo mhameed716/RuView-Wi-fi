@@ -15,6 +15,11 @@
   <code>Dark neon</code> · <code>بدون تبعيات ثقيلة</code>
 </p>
 
+<p align="center">
+  تقدير وضعية الجسم (HAR) · بصمة مشية · كشف سقوط · وضع حراسة أمنية ·
+  مراقبة النوم واضطراب التنفس
+</p>
+
 ---
 
 ## ما هذا؟
@@ -32,7 +37,10 @@
   وخيارات متقدمة (رمز `RUVIEW_API_TOKEN` واتصال `wss`).
 - زر اتصال/قطع مع مؤشر حي (متصل · جاري الاتصال · إعادة محاولة · غير متصل).
 - شرائح مباشرة: الهدف، مدة الاتصال، معدل التحديث (Hz).
-- أربع بطاقات ملخص: حالة النظام، العقد النشطة، الحضور الآن، جودة الإشارة.
+- بطاقات ملخص: حالة النظام، العقد النشطة، الحضور الآن، الوضعية الحالية،
+  جودة الإشارة.
+- **وضع الحراسة الأمنية**: مفتاح تفعيل بنبض نيوني، آخر تنبيه، عدد التنبيهات،
+  وتعديل رقم الطوارئ (997 افتراضيًا).
 - زر بارز للانتقال إلى لوحة الرصد.
 
 ### 2. لوحة الرصد
@@ -40,8 +48,18 @@
   من مواضع `persons[].position` الحقيقية، وتسمية عربية واضحة.
 - **لوحة العلامات الحيوية**: عدّاد تنفس قوسي (نفس/دقيقة) بحالة عربية
   (طبيعي/سريع/بطيء)، شدة الحركة كمقياس متدرّج، درجة الثقة، ورسم مصغّر للتاريخ.
-- **سجل الأنشطة والتنبيهات** في الأسفل: حضور، حركة، تنفس، إشارة، اتصال —
-  بقواعد صريحة وحرّاس زمنية تمنع الإغراق.
+- **بطاقة الوضعية الحالية (HAR)**: «الحالة الحالية: جالس» مع أيقونة متبدّلة،
+  مصدر التقدير ودرجة الثقة، وهيكل عظمي مرسوم بـ `CustomPainter` من مفاصل
+  الخادم (17 نقطة COCO) عند توفّرها.
+- **بصمة المشية**: تعرّف على الشخص من إيقاع المشي (بدون كاميرا أو وجه)،
+  مع تسجيل بصمات جديدة وحذفها وتشابه نسبي معلن.
+- **لافتة طوارئ للسقوط**: تظهر أعلى الشاشة بلون أحمر نابض مع صوت واهتزاز
+  وإشعار نظام، وزرّي «إلغاء الإنذار» و«اتصال بالطوارئ (997)».
+- **لوحة النوم والعلامات الحيوية**: جودة النوم 0–100، متوسط التنفس وتصنيفه،
+  تقلّب التنفس، وعدد اضطرابات التنفس (احتمال انقطاع النفس) مع تنبيه.
+- **سجل الأنشطة والتنبيهات** في الأسفل: حضور، حركة، تنفس، إشارة، اتصال،
+  وضعية، مشية، سقوط، أمني، نوم — بقواعد صريحة وحرّاس زمنية تمنع الإغراق،
+  مع تصفية «الكل / أمني» لعرض «سجل الأنشطة الأمنية».
 
 ## البدء السريع
 
@@ -74,7 +92,8 @@ flutter run --release
 RuView-Wi-fi/
 ├── lib/                     كود تطبيق Flutter (MVVM)
 │   ├── core/                الثيم، الألوان، النصوص العربية، الأدوات، التنقل
-│   ├── data/                Models · Services (WS/UDP/CSI) · Repository
+│   ├── data/                Models · Services (WS/UDP/CSI/تنبيهات) · Repository
+│   ├── domain/monitoring/   تقدير الوضعية · السقوط · المشية · التسلل · النوم
 │   └── presentation/        ViewModels · Screens · Widgets
 ├── test/                    اختبارات وحدة + ويدجت
 ├── android/                 مشروع أندرويد (Manifest، Gradle، الأيقونات)
@@ -94,6 +113,12 @@ RuView-Wi-fi/
 | [`lib/data/models/sensing_frame.dart`](lib/data/models/sensing_frame.dart) | نموذج `sensing_update` الرسمي + تسامح الحقول |
 | [`lib/presentation/viewmodels/`](lib/presentation/viewmodels/) | `ConnectionViewModel` · `SensingViewModel` · قواعد الأحداث |
 | [`lib/presentation/widgets/presence_radar.dart`](lib/presentation/widgets/presence_radar.dart) | الرادار الحي |
+| [`lib/domain/monitoring/safety_monitor.dart`](lib/domain/monitoring/safety_monitor.dart) | المحرّك الموحّد: وضعية + سقوط + مشية + تسلل + نوم |
+| [`lib/domain/monitoring/posture_estimator.dart`](lib/domain/monitoring/posture_estimator.dart) | تقدير الوضعية من الخادم ← الشخص ← المفاصل ← الحركة |
+| [`lib/presentation/widgets/posture_status_card.dart`](lib/presentation/widgets/posture_status_card.dart) | بطاقة «الحالة الحالية» + الهيكل العظمي + بصمة المشية |
+| [`lib/presentation/widgets/emergency_banner.dart`](lib/presentation/widgets/emergency_banner.dart) | لافتة السقوط الحمراء النابضة |
+| [`lib/presentation/widgets/security_mode_card.dart`](lib/presentation/widgets/security_mode_card.dart) | مفتاح وضع الحراسة الأمنية |
+| [`lib/presentation/widgets/sleep_vitals_panel.dart`](lib/presentation/widgets/sleep_vitals_panel.dart) | لوحة النوم والتنفس واضطراب النفس |
 | [`tools/mock_ruview_server.mjs`](tools/mock_ruview_server.mjs) | بوابة محاكاة بلا تبعيات (WS + REST + معاينة) |
 
 الهيكلية الكاملة وتدفّق البيانات: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
@@ -108,6 +133,9 @@ RuView-Wi-fi/
 - UDP `5005`: إطارات CSI الثنائية (magic `0xC5110001`) أو JSON مبثوث.
 - REST للتحقق السريع: `/health`, `/api/v1/info`, `/api/v1/nodes`,
   `/api/v1/sensing/latest`, `/api/v1/vital-signs`.
+- حقول الرصد المتقدم (اختيارية، تُقرأ بتسامح): `posture` و`persons[].pose`
+  و`persons[].keypoints[].{name,x,y,z,confidence}`. التطبيق يعمل كاملًا
+  حتى إن لم يرسلها الخادم (ينتقل إلى تقدير محلي من الحركة).
 
 التفاصيل الكاملة مع الجداول: [`docs/PROTOCOL.md`](docs/PROTOCOL.md)
 
@@ -131,8 +159,19 @@ python3 tools/check_dart_imports.py       # تدقيق استيرادات/أقو
 ```
 
 يغطّي الاختبار تحليل الإطار الرسمي وكل الأسماء البديلة، تحقّق الإعدادات، فكّ
-إطارات CSI الثنائية، قواعد الأحداث، تنعيم العلامات الحيوية، وواجهة لوحة
-التحكم (النصوص العربية + RTL + التنقل).
+إطارات CSI الثنائية، قواعد الأحداث، تنعيم العلامات الحيوية، واجهة لوحة
+التحكم (النصوص العربية + RTL + التنقل)، إضافةً إلى:
+
+| الملف | ما يتحقق منه |
+|---|---|
+| `test/domain/posture_estimator_test.dart` | أولوية مصادر الوضعية + استنتاج المفاصل |
+| `test/domain/fall_detector_test.dart` | نافذة الانتقال، عتبة الحركة، التهدئة |
+| `test/domain/intrusion_detector_test.dart` | مهلة التسليح، التهدئة، المنطقة |
+| `test/domain/gait_analyzer_test.dart` | نافذة المشي، المتجه، تشابه جيب التمام |
+| `test/domain/sleep_monitor_test.dart` | النوم العميق، اضطراب النفس، الجودة |
+| `test/domain/safety_monitor_test.dart` | دمج المحرّكات + الإشارات + التسجيل |
+| `test/services/monitoring_settings_repository_test.dart` | حفظ الحراسة/الطوارئ/البصمات |
+| `test/widget/monitoring_widgets_test.dart` | بطاقات الوضعية والنوم والحراسة والطوارئ |
 
 ## القيود وإخلاء المسؤولية
 
@@ -140,6 +179,12 @@ python3 tools/check_dart_imports.py       # تدقيق استيرادات/أقو
 - مسار UDP المحلي (بدون بوابة) يستخدم مؤشرات مبسّطة في الهاتف؛ الدقة الكاملة
   تأتي من خادم RuView الرسمي عبر WebSocket.
 - التطبيق مصمّم لشبكة محلية موثوقة (يسمح بـ `ws://` غير مشفّر لتلك الحالة).
+- **تقدير الوضعية** يفضّل قيمة الخادم؛ الاستنتاج من المفاصل تخميني هندسي
+  (heuristic) وليس نموذجًا عصبيًا عميقًا. **بصمة المشية** استرشادية بحدود
+  تشابه معلنة، وليست تعريفًا بيومتريًا قضائيًا.
+- **كشف السقوط** يفتح لوحة الهاتف على رقم الطوارئ فقط (`ACTION_DIAL`) ولا
+  يتصل تلقائيًا، تجنّبًا للاتصالات الكاذبة. المستخدم يقرّر الإلغاء أو الاتصال.
+- لا تُخزَّن سوى الإعدادات ومتجهات ميزات المشية (بلا صور/صوت/بيانات خام).
 
 ## الترخيص
 

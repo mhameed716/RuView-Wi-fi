@@ -7,7 +7,9 @@ import 'neon_card.dart';
 import 'neon_button.dart';
 
 /// بطاقة سجل الأنشطة الحية أسفل لوحة الرصد.
-class ActivityLogPanel extends StatelessWidget {
+///
+/// تدعم تصفية «السجل الأمني» (سقوط + حراسة) دون مغادرة الشاشة.
+class ActivityLogPanel extends StatefulWidget {
   const ActivityLogPanel({
     super.key,
     required this.events,
@@ -20,9 +22,23 @@ class ActivityLogPanel extends StatelessWidget {
   final int maxItems;
 
   @override
+  State<ActivityLogPanel> createState() => _ActivityLogPanelState();
+}
+
+class _ActivityLogPanelState extends State<ActivityLogPanel> {
+  bool _securityOnly = false;
+
+  bool _isSecurity(ActivityEvent event) =>
+      event.kind == ActivityKind.security || event.kind == ActivityKind.fall;
+
+  @override
   Widget build(BuildContext context) {
-    final List<ActivityEvent> visible =
-        events.length > maxItems ? events.sublist(0, maxItems) : events;
+    final List<ActivityEvent> events = _securityOnly
+        ? widget.events.where(_isSecurity).toList(growable: false)
+        : widget.events;
+    final List<ActivityEvent> visible = events.length > widget.maxItems
+        ? events.sublist(0, widget.maxItems)
+        : events;
 
     return NeonCard(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -30,33 +46,56 @@ class ActivityLogPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           SectionHeader(
-            title: ArStrings.activityLog,
+            title: _securityOnly
+                ? 'سجل الأنشطة الأمنية'
+                : ArStrings.activityLog,
             subtitle: events.isEmpty ? null : '${events.length} حدث مسجّل',
-            icon: Icons.notifications_active_outlined,
-            trailing: events.isEmpty
-                ? null
-                : NeonIconButton(
+            icon: _securityOnly
+                ? Icons.shield_rounded
+                : Icons.notifications_active_outlined,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                _FilterChip(
+                  label: 'الكل',
+                  selected: !_securityOnly,
+                  onTap: () => setState(() => _securityOnly = false),
+                ),
+                const SizedBox(width: 6),
+                _FilterChip(
+                  label: 'أمني',
+                  selected: _securityOnly,
+                  onTap: () => setState(() => _securityOnly = true),
+                ),
+                if (events.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 4),
+                  NeonIconButton(
                     icon: Icons.delete_sweep_outlined,
                     tooltip: ArStrings.clearLog,
                     size: 34,
-                    onPressed: onClear,
+                    onPressed: widget.onClear,
                   ),
+                ],
+              ],
+            ),
           ),
           if (events.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 26, horizontal: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 8),
               child: Row(
                 children: <Widget>[
-                  Icon(
+                  const Icon(
                     Icons.hourglass_empty_rounded,
                     size: 18,
                     color: AppColors.textMuted,
                   ),
-                  SizedBox(width: 10),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      ArStrings.noEvents,
-                      style: TextStyle(
+                      _securityOnly
+                          ? 'لا توجد أنشطة أمنية بعد — فعّل وضع الحراسة من لوحة التحكم.'
+                          : ArStrings.noEvents,
+                      style: const TextStyle(
                         fontSize: 12,
                         height: 1.6,
                         color: AppColors.textMuted,
@@ -78,6 +117,44 @@ class ActivityLogPanel extends StatelessWidget {
               ],
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// شريحة تصفية صغيرة أعلى السجل.
+class _FilterChip extends StatelessWidget {
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color tone = selected ? AppColors.cyan : AppColors.textMuted;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: selected ? AppColors.cyan.withAlpha(26) : Colors.transparent,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: tone.withAlpha(selected ? 120 : 60)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            color: tone,
+          ),
+        ),
       ),
     );
   }
@@ -190,6 +267,11 @@ class _EventRow extends StatelessWidget {
         ActivityKind.motion => Icons.directions_run_rounded,
         ActivityKind.breathing => Icons.air_rounded,
         ActivityKind.signal => Icons.signal_cellular_alt_rounded,
+        ActivityKind.posture => Icons.accessibility_new_rounded,
+        ActivityKind.gait => Icons.directions_walk_rounded,
+        ActivityKind.fall => Icons.personal_injury_rounded,
+        ActivityKind.security => Icons.shield_rounded,
+        ActivityKind.sleep => Icons.bedtime_rounded,
         ActivityKind.system => Icons.memory_rounded,
       };
 }

@@ -3,7 +3,7 @@ description: "RuView Wi-Fi — واجهة أندرويد عربية لمراقب
 publish_to: "none"
 
 # نسخة التطبيق: <major>.<minor>.<patch>+<build>
-version: 1.0.0+1
+version: 1.1.0+2
 
 environment:
   sdk: ">=3.4.0 <4.0.0"
