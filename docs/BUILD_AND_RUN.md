@@ -87,6 +87,13 @@ flutter build apk --release --split-per-abi
 # المخرجات: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
 ```
 
+### البناء التلقائي على GitHub Actions
+
+لا حاجة لـ Flutter محليًا: خط الأنابيب `.github/workflows/ci.yml` يبني
+`app-release.apk` (حزمة شاملة لكل المعماريات) بعد نجاح التحليل والاختبارات،
+ويرفعه كأثر (Artifact) باسم `ruview-wifi-apk` في تبويب **Actions**.
+وسم (`v1.2.0` مثلًا) يُنشئ صفحة إصدار GitHub ويُرفق بها ملف APK تلقائيًا.
+
 ### توقيع إصدار حقيقي
 
 1. أنشئ مفتاحًا:

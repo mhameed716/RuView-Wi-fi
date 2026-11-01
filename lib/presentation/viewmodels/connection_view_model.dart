@@ -146,14 +146,15 @@ class ConnectionViewModel extends ChangeNotifier {
     if (_host == value) return;
     _host = value;
     _formMessage = null;
-    _safeNotify();
+    // بعد محاولة اتصال فاشلة نعرض الخطأ تحت الحقل مباشرة مع كل ضغطة مفتاح.
+    _safeNotify(force: _showValidation);
   }
 
   void setPort(String value) {
     if (_portText == value) return;
     _portText = value;
     _formMessage = null;
-    _safeNotify();
+    _safeNotify(force: _showValidation);
   }
 
   void setTransport(TransportKind value) {
@@ -202,7 +203,9 @@ class ConnectionViewModel extends ChangeNotifier {
     _formMessage = null;
     if (!isFormValid) {
       _formMessage = '${hostError ?? ''} ${portError ?? ''}'.trim();
-      _safeNotify();
+      // ضغط المستخدم على «اتصال» يجب أن يظهر نتيجته فورًا، لذلك نتجاوز
+      // خانق التنبيهات (400ms) هنا.
+      _safeNotify(force: true);
       return false;
     }
 

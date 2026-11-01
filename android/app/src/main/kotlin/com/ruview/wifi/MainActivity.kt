@@ -1,6 +1,7 @@
 package com.ruview.wifi
 
 import android.Manifest
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -8,8 +9,6 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,6 +21,9 @@ import io.flutter.plugin.common.MethodChannel
  *
  *  • `ruview/alerts`    — إشعارات نظام + طلب إذن أندرويد 13.
  *  • `ruview/emergency` — فتح لوحة الاتصال على رقم الطوارئ (`ACTION_DIAL`).
+ *
+ * كل شيء مبني على واجهات أندرويد القياسية فقط (بلا androidx) لتفادي أي تبعية
+ * إضافية في ملف Gradle.
  */
 class MainActivity : FlutterActivity() {
 
@@ -62,51 +64,52 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
+    private fun notificationsGranted(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return true
+        return checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
-        ) {
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !notificationsGranted()) {
             requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_NOTIFICATIONS)
         }
     }
 
     private fun showNotification(title: String, body: String, critical: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
-            // المستخدم لم يمنح الإذن بعد؛ التنبيه المرئي داخل التطبيق يكفيه.
-            return
-        }
+        // المستخدم لم يمنح الإذن بعد؛ التنبيه المرئي داخل التطبيق يكفيه.
+        if (!notificationsGranted()) return
 
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
+        val builder: Notification.Builder
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
                 CHANNEL_NAME,
                 NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = CHANNEL_DESCRIPTION
-                enableVibration(true)
-            }
+            )
+            channel.description = CHANNEL_DESCRIPTION
+            channel.enableVibration(true)
             manager.createNotificationChannel(channel)
+            builder = Notification.Builder(this, CHANNEL_ID)
+        } else {
+            @Suppress("DEPRECATION")
+            builder = Notification.Builder(this)
         }
 
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
+        builder
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle(title)
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setStyle(Notification.BigTextStyle().bigText(body))
             .setPriority(
-                if (critical) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH
+                if (critical) Notification.PRIORITY_MAX else Notification.PRIORITY_HIGH
             )
-            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setCategory(Notification.CATEGORY_ALARM)
             .setAutoCancel(true)
-            .build()
 
-        manager.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), notification)
+        manager.notify((System.currentTimeMillis() % Int.MAX_VALUE).toInt(), builder.build())
     }
 
     /**
