@@ -494,6 +494,10 @@ class SensingViewModel extends ChangeNotifier {
     }
 
     if (snapshot.status == ConnectionStatus.disconnected) {
+      // لا نُبقي «آخر إطار» بعد الانقطاع: كل القراءات (تنفس، حضور، وضعية)
+      // تصبح غير متاحة حتى تصل أول حزمة جديدة بعد إعادة الاتصال.
+      _latest = null;
+      _previous = null;
       _signalHistory.clear();
       _motionHistory.clear();
       _breathingHistory.clear();

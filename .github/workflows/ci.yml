@@ -47,7 +47,7 @@ jobs:
             echo '```'
             echo '### تفاصيل'
             echo '```'
-            grep -A22 '\[E\]$' /tmp/test.log | head -160
+            grep -B60 -A8 '\[E\]$' /tmp/test.log | head -200
             echo '```'
           } > /tmp/body.md
           if [ -n "${{ github.event.pull_request.number }}" ]; then
