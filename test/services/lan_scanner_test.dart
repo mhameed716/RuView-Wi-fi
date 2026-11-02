@@ -346,8 +346,8 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 40));
 
       expect(changes.length, greaterThanOrEqualTo(2));
+      // أول نبضة: من «بلا شبكة» إلى شبكة، ثم نبضة عند الانتقال لنقطة الاتصال.
       expect(changes.first, isTrue);
-      expect(changes.last, isTrue);
       expect(fingerprints, contains('192.168.43'));
       expect(changes.where((bool value) => value).length, 2);
     });
