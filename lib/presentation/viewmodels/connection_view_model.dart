@@ -25,7 +25,12 @@ class ConnectionViewModel extends ChangeNotifier {
     NetworkPreferencesRepository? networkPreferences,
     NetworkWatcher? networkWatcher,
     bool enableAutoDiscovery = true,
+    bool Function()? testEnvironmentDetector,
+    Future<NetworkContext> Function()? networkDetector,
   })  : _enableAutoDiscovery = enableAutoDiscovery,
+        _testEnvironmentDetector =
+            testEnvironmentDetector ?? _defaultTestDetector,
+        _networkDetector = networkDetector ?? NetworkContext.detect,
         _repository = repository,
         _settingsRepository = settingsRepository,
         _scanner = scanner ?? LanScanner(),
@@ -39,8 +44,17 @@ class ConnectionViewModel extends ChangeNotifier {
   final NetworkPreferencesRepository _networkPreferences;
   final NetworkWatcher _networkWatcher;
 
+  /// قارئ سياق الشبكة (قابل للاستبدال في الاختبارات).
+  final Future<NetworkContext> Function() _networkDetector;
+
   /// تعطيل الاكتشاف (للاختبارات أو التشغيل اليدوي الصرف).
   final bool _enableAutoDiscovery;
+
+  /// كشف بيئة الاختبار (قابل للاستبدال في اختبارات الشبكة).
+  final bool Function() _testEnvironmentDetector;
+
+  static bool _defaultTestDetector() =>
+      Platform.environment['FLUTTER_TEST'] == 'true';
 
   StreamSubscription<ConnectionSnapshot>? _connectionSubscription;
   StreamSubscription<SensingFrame>? _framesSubscription;
@@ -177,7 +191,7 @@ class ConnectionViewModel extends ChangeNotifier {
     _initialized = true;
     _safeNotify(force: true);
 
-    if (_offlineEnvironment || !_enableAutoDiscovery) return;
+    if (!_enableAutoDiscovery || _testEnvironmentDetector()) return;
 
     // الاتصال التلقائي: يعمل بمجرّد ارتباط الجهاز بأي شبكة.
     _networkWatcher.start(_handleNetworkUpdate);
@@ -233,9 +247,6 @@ class ConnectionViewModel extends ChangeNotifier {
     }
   }
 
-  /// بيئة الاختبار: نُعطّل الشبكة تمامًا كي لا تعتمد الاختبارات على مقابس.
-  static bool get _offlineEnvironment =>
-      Platform.environment['FLUTTER_TEST'] == 'true';
 
   /// تشغيل/إيقاف الاتصال التلقائي (يُحفظ فورًا).
   Future<void> setAutoConnect(bool value) async {
@@ -283,10 +294,11 @@ class ConnectionViewModel extends ChangeNotifier {
     _autoMessage = null;
     _safeNotify(force: true);
 
+    String? scannedFingerprint;
     try {
-      final NetworkContext context =
-          _network.isConnected ? _network : await NetworkContext.detect();
+      final NetworkContext context = await _networkDetector();
       _network = context;
+      scannedFingerprint = context.fingerprint;
       if (!context.isConnected) {
         _phase = DiscoveryPhase.notFound;
         _autoMessage = ArStrings.autoNoNetwork;
@@ -320,6 +332,13 @@ class ConnectionViewModel extends ChangeNotifier {
     } finally {
       _autoBusy = false;
       _safeNotify(force: true);
+      // تغيّرت الشبكة أثناء المسح؟ أعد الاكتشاف على الشبكة الجديدة فورًا.
+      if (!_disposed &&
+          _autoConnect &&
+          scannedFingerprint != null &&
+          _network.fingerprint != scannedFingerprint) {
+        unawaited(runAutoConnect(force: true));
+      }
     }
   }
 
@@ -390,13 +409,29 @@ class ConnectionViewModel extends ChangeNotifier {
     if (!changed) return;
     if (previous.fingerprint == context.fingerprint) return;
 
-    // شبكة جديدة → أعد المحاولة من الصفر.
+    // شبكة جديدة (واي فاي منزلي ⇄ نقطة اتصال هاتف مثلًا): الاتصال القديم
+    // لن يعمل، لذلك نقطعه ونُعيد الاكتشاف على الشبكة الجديدة بالكامل.
     _autoAttempts = 0;
     _autoRetryTimer?.cancel();
     _safeNotify(force: true);
-    if (_autoConnect && !isConnected) {
-      unawaited(runAutoConnect());
+    if (_autoConnect) {
+      unawaited(_reconnectForNewNetwork());
     }
+  }
+
+  Future<void> _reconnectForNewNetwork() async {
+    if (_disposed) return;
+    // مسح جارٍ الآن: سيُعيد المسح نفسه عند انتهائه لأن البصمة تغيّرت.
+    if (_autoBusy) return;
+    if (isConnected || _status.isBusy) {
+      await _repository.disconnect();
+    }
+    _candidates = const <LanCandidate>[];
+    _lastScanAt = null;
+    _phase = DiscoveryPhase.idle;
+    _autoMessage = null;
+    _safeNotify(force: true);
+    await runAutoConnect();
   }
 
   void _scheduleAutoRetry() {

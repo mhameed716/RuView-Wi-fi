@@ -153,6 +153,12 @@ jobs:
           node --check preview/app.js
           node --check preview/twin.js
           node --check tools/mock_ruview_server.mjs
+          node --check tools/router_sim.mjs
+          node --check tools/lan_scan_mirror.mjs
+          node --check tools/router_lab.mjs
+
+      - name: مختبر الراوتر ونقطة الاتصال
+        run: node tools/router_lab.mjs
 
       - name: توليد إطار تجريبي والتحقق من الحقول
         run: |

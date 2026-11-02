@@ -51,6 +51,8 @@ lib/
 │   │                             websocket_sensing_transport.dart
 │   │                             udp_sensing_transport.dart + csi_analyzer.dart
 │   │                             settings_repository.dart (SharedPreferences)
+│   │                             lan_scanner.dart (اكتشاف/اتصال تلقائي)
+│   │                             network_preferences_repository.dart
 │   └── repositories/
 │       └── sensing_repository.dart
 └── presentation/
@@ -84,6 +86,26 @@ lib/
 6. الواجهة تعيد البناء عبر `ListenableBuilder` فقط، والرسوم المتحركة الثقيلة
    (الرادار، العدّاد، الهيكل العظمي) تستخدم `CustomPainter`/
    `AnimationController` مستقلًا لتجنّب إعادة بناء الشجرة كاملة.
+
+## الاكتشاف التلقائي (`lib/data/services/lan_scanner.dart`)
+
+| المكوّن | الدور |
+|---|---|
+| `NetworkContext` | يقرأ كل عناوين IPv4 الخاصة (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`) ويبني بادئات `/24` لكل واجهة + بصمة مستقرة للشبكة |
+| `LanScanner.hostsFor` | ترتيب الأهداف: محفوظ → بوابة كل شبكة (`.1`) → عنوان الجهاز → `.254/.2/.100` → `ruview.local` → `127.0.0.1` → بقية `/24` |
+| `LanScanner.probe` | TCP + `GET /health` (مهلة 220 ms، قراءة 450 ms) ثم مطابقة بصمة RuView في جسم الرد |
+| `LanScanner.broadcastProbe` | بثّ UDP على 5005 (`RUVIEW_DISCOVERY_V1`) إلى `255.255.255.255` وكل `<بادئة>.255`، وجمع ردود البوابات |
+| `LanCandidate.score` | ‎+100 RuView، ‎+45 محفوظ، ‎+18 بوابة، ‎+10 WS، ‎+6 منفذ 8765، وخصم على الاستجابة |
+| `NetworkWatcher` | كل 5 ثوانٍ يقارن البصمة؛ عند تغيّر الشبكة يقطع الاتصال ويعيد الاكتشاف كاملًا |
+| `ConnectionViewModel` | `runAutoConnect` → مسح → تجربة أفضل 4 مرشّحين → **لا يعتمد الاتصال إلا بعد وصول إطارات فعلية** |
+
+القرارات المقصودة: المسح العميق افتراضي عند الارتباط بالشبكة (لأن الخادم قد
+يكون على حاسوب داخل الشبكة لا على البوابة)، والتوقّف المبكر عند أول خادم
+مؤكَّد، وعدم انتظار مهلة البثّ إن حسم فحص TCP الهوية.
+
+المختبر: `tools/router_sim.mjs` (+ `tools/router_lab.mjs`) يبني راوترات
+ونقاط اتصال هاتف افتراضية ويشغّل نسخة مطابقة للخوارزمية في Node، لأن بيئة
+التطوير لا تملك واجهة LAN حقيقية.
 
 ## طبقة الرصد المتقدم (`lib/domain/monitoring/`)
 
