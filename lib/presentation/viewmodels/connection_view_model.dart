@@ -182,7 +182,7 @@ class ConnectionViewModel extends ChangeNotifier {
     // الاتصال التلقائي: يعمل بمجرّد ارتباط الجهاز بأي شبكة.
     _networkWatcher.start(_handleNetworkUpdate);
     if (_autoConnect) {
-      unawaited(autoConnect());
+      unawaited(runAutoConnect());
     }
   }
 
@@ -245,12 +245,12 @@ class ConnectionViewModel extends ChangeNotifier {
     await _networkPreferences.saveAutoConnect(value);
     _safeNotify(force: true);
     if (value && !isConnected) {
-      unawaited(autoConnect());
+      unawaited(runAutoConnect());
     }
   }
 
   /// إعادة المسح يدويًا (مسح عميق).
-  Future<void> rescan() => autoConnect(deep: true, force: true);
+  Future<void> rescan() => runAutoConnect(deep: true, force: true);
 
   /// اتصال مباشر بمرشّح مكتشف.
   Future<void> connectToCandidate(LanCandidate candidate) async {
@@ -273,7 +273,7 @@ class ConnectionViewModel extends ChangeNotifier {
   }
 
   /// الاكتشاف + الاتصال التلقائي على أي شبكة.
-  Future<void> autoConnect({bool deep = true, bool force = false}) async {
+  Future<void> runAutoConnect({bool deep = true, bool force = false}) async {
     if (_disposed || _autoBusy) return;
     if (!_autoConnect && !force) return;
     if (isConnected && !force) return;
@@ -395,7 +395,7 @@ class ConnectionViewModel extends ChangeNotifier {
     _autoRetryTimer?.cancel();
     _safeNotify(force: true);
     if (_autoConnect && !isConnected) {
-      unawaited(autoConnect());
+      unawaited(runAutoConnect());
     }
   }
 
@@ -407,7 +407,7 @@ class ConnectionViewModel extends ChangeNotifier {
     _autoRetryTimer?.cancel();
     _autoRetryTimer = Timer(delay, () {
       if (_disposed || isConnected) return;
-      unawaited(autoConnect(deep: false));
+      unawaited(runAutoConnect(deep: false));
     });
   }
 

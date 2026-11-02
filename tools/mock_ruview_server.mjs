@@ -365,7 +365,12 @@ function json(res, body) {
 function handleApi(pathname) {
   switch (pathname) {
     case '/health':
-      return { status: 'ok', uptime_s: round((Date.now() - state.startedAt) / 1000, 1) };
+      return {
+        status: 'ok',
+        service: 'ruview',
+        mode: 'mock',
+        uptime_s: round((Date.now() - state.startedAt) / 1000, 1),
+      };
     case '/api/v1/info':
       return {
         name: 'mock-ruview',

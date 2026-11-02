@@ -247,9 +247,9 @@ class _BodyPainter extends CustomPainter {
       ..style = PaintingStyle.stroke;
     final Paint dot = Paint()..color = AppColors.emerald.withAlpha(210);
 
-    for (final List<String> bone in bones) {
-      final Vec3? a = twin.joints[bone[0]];
-      final Vec3? b = twin.joints[bone[1]];
+    for (final List<String> pair in bones) {
+      final Vec3? a = twin.joints[pair[0]];
+      final Vec3? b = twin.joints[pair[1]];
       if (a == null || b == null) continue;
       canvas.drawLine(project(rotate(a)), project(rotate(b)), bone);
     }

@@ -72,7 +72,7 @@ class _RoomPainter extends CustomPainter {
         'لم تُبنَ خريطة الغرفة بعد — تحتاج انعكاسات ثابتة (Static CSI)',
         Offset(size.width / 2, size.height / 2),
         color: AppColors.textSecondary,
-        center: true,
+        centered: true,
       );
       return;
     }
@@ -306,21 +306,21 @@ class _RoomPainter extends CustomPainter {
   void _text(
     Canvas canvas,
     String value,
-    Offset center, {
+    Offset at, {
     required Color color,
-    bool center = false,
+    bool centered = false,
   }) {
     final TextPainter painter = TextPainter(
       text: TextSpan(
         text: value,
         style: TextStyle(color: color, fontSize: 11, height: 1.5),
       ),
-      textAlign: center ? TextAlign.center : TextAlign.start,
+      textAlign: centered ? TextAlign.center : TextAlign.start,
       textDirection: textDirection,
     )..layout(maxWidth: 240);
     painter.paint(
       canvas,
-      Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
+      Offset(at.dx - painter.width / 2, at.dy - painter.height / 2),
     );
   }
 
