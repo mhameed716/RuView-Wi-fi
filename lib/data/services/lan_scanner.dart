@@ -37,7 +37,7 @@ class NetworkContext {
   String get label {
     if (!isConnected) return 'بلا شبكة';
     if (gatewayHost == null) return localAddresses.first;
-    return '$prefix.0/24 · بوابة $gatewayHost';
+    return '${localAddresses.first} · بوابة $gatewayHost';
   }
 
   /// يقرأ واجهات الشبكة فعليًا (يفشل بأمان إلى [offline]).

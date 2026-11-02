@@ -80,6 +80,7 @@ class TwinState {
     RoomModel? room,
     BodyMatch? match,
     bool clearMatch = false,
+    bool? hasBody,
   }) {
     return TwinState(
       shape: shape,
@@ -91,7 +92,7 @@ class TwinState {
       match: clearMatch ? null : (match ?? this.match),
       room: room ?? this.room,
       posture: posture,
-      hasBody: hasBody,
+      hasBody: hasBody ?? this.hasBody,
       updatedAt: updatedAt,
     );
   }

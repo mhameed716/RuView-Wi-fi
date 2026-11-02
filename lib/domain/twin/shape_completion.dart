@@ -152,9 +152,13 @@ class ShapeCompleter {
       setIfMissing('right_hip', _mirror(pick('left_hip')!, pelvis, across));
     }
 
-    // 3) الرأس.
+    // 3) الرأس: أنف + عينان + أذنان (مفاصل COCO القياسية كاملة).
     final Vec3 headTop = neck + bodyAxis * (shape.heightM * 0.12);
-    setIfMissing('nose', neck + bodyAxis * (shape.heightM * 0.09) + Vec3(0, 0, 0.04));
+    final Vec3 nose =
+        neck + bodyAxis * (shape.heightM * 0.09) + Vec3(0, 0, 0.04);
+    setIfMissing('nose', nose);
+    setIfMissing('left_eye', nose + across * 0.032 + bodyAxis * 0.025);
+    setIfMissing('right_eye', nose - across * 0.032 + bodyAxis * 0.025);
     setIfMissing('left_ear', headTop - bodyAxis * (shape.heightM * 0.03) + across * 0.05);
     setIfMissing('right_ear', headTop - bodyAxis * (shape.heightM * 0.03) - across * 0.05);
 

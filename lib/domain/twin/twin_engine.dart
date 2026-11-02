@@ -74,7 +74,10 @@ class TwinEngine {
 
     final bool presence = frame.hasPresence && keypoints.isNotEmpty;
     if (!presence) {
-      _state = _state.copyWith(room: room);
+      // لا جسم مرصود الآن: نُبقي خريطة الغرفة ونخفي المجسّم.
+      _state = _state.copyWith(room: room, hasBody: false);
+      _lastShape = BodyShape.average;
+      _lastMeshAt = null;
       if (keypoints.isEmpty) {
         _cloth.settle();
       }
