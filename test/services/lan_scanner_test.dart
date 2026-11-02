@@ -271,7 +271,7 @@ void main() {
       );
 
       expect(slow.score, 116 - 20);
-      expect(fast.score, isGreaterThan(slow.score));
+      expect(fast.score, greaterThan(slow.score));
     });
   });
 
