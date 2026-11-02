@@ -33,3 +33,6 @@ node_modules/
 
 # نسخة RuView الرسمية الكاملة (تُسحب عند الحاجة — انظر vendor/ruview-official/PROVENANCE.md)
 vendor/ruview-full/
+
+# مساحة عمل محلية مؤقتة (غير مرتبطة بالتطبيق)
+/.arena/

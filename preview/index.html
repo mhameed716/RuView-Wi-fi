@@ -122,6 +122,30 @@
         <p class="security__hint">تُحوَّل الحركة إلى تنبيه بعد 20 ثانية من التفعيل، وبحد أقصى تنبيه واحد كل 30 ثانية.</p>
       </div>
 
+
+      <div class="card auto-card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--cyan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 18.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm-4.2-4.7a6 6 0 0 1 8.4 0l1.4-1.4a8 8 0 0 0-11.2 0l1.4 1.4Zm-2.8-2.9a10 10 0 0 1 14 0L20.4 9.5a12 12 0 0 0-16.8 0l1.4 1.4Z"/></svg></span>
+            <div>
+              <h2>الاتصال التلقائي</h2>
+              <p>يعمل على أي راوتر أو شبكة — بلا إعداد يدوي</p>
+            </div>
+          </div>
+          <span class="pill" data-tone="ok" id="auto-net-status">متصل تلقائيًا</span>
+        </div>
+        <div class="auto-net">
+          <div class="auto-net__row">
+            <span class="auto-net__label">الشبكة الحالية</span>
+            <code id="auto-net-label">—</code>
+          </div>
+          <ul class="auto-candidates" id="auto-candidates"></ul>
+          <div class="auto-net__footer">
+            <span class="auto-net__toggle" aria-hidden="true"><i></i></span>
+            <span>الاتصال تلقائيًا عند الارتباط بالشبكة — مُفعّل</span>
+          </div>
+        </div>
+      </div>
       <h3 class="section-title">
         <span class="icon icon--cyan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17h4v4H3v-4Zm5-6h4v10H8V11Zm5-8h4v18h-4V3Zm5 5h4v13h-4V8Z"/></svg></span>
         ملخص سريع
@@ -260,6 +284,46 @@
         <p class="security__hint">تقدير استرشادي من CSI وليس جهازًا طبيًا — لا يُعتمد للتشخيص.</p>
       </div>
 
+
+      <div class="card twin-card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--cyan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a3 3 0 1 1 0 6 3 3 0 0 1 0-6Zm-5 8h10a3 3 0 0 1 3 3v3h-2v6h-3v-6h-2v6H8v-6H6v-3a3 3 0 0 1 3-3Z"/></svg></span>
+            <div>
+              <h2>التوأم الراديوي (SMPL)</h2>
+              <p>مجسّم ثلاثي الأبعاد + إكمال تنبئي + قماش حيّ</p>
+            </div>
+          </div>
+          <span class="pill" data-tone="idle">β يتغيّر مع الجسم</span>
+        </div>
+        <div class="twin-canvas-wrap">
+          <canvas id="twin-canvas" aria-label="مجسّم الجسم ثلاثي الأبعاد"></canvas>
+        </div>
+        <ul class="twin-measurements" id="twin-measurements"></ul>
+      </div>
+
+      <div class="card room-card">
+        <div class="card__head">
+          <div class="card__title">
+            <span class="icon icon--emerald"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10 12 3l9 7v11h-6v-6H9v6H3V10Z"/></svg></span>
+            <div>
+              <h2>إعادة بناء الغرفة (RF-SLAM)</h2>
+              <p>انعكاسات ثابتة → شبكة إشغال → أثاث وخامات واقعية</p>
+            </div>
+          </div>
+        </div>
+        <div class="twin-canvas-wrap twin-canvas-wrap--room">
+          <canvas id="room-canvas" aria-label="خريطة الغرفة ثلاثية الأبعاد"></canvas>
+        </div>
+        <ul class="room-legend">
+          <li><span style="background:#3f5f76"></span>قماش كتان</li>
+          <li><span style="background:#9a6a3c"></span>خشب بلوط</li>
+          <li><span style="background:#5b3a25"></span>خشب جوز</li>
+          <li><span style="background:#6e7378"></span>حجر طبيعي</li>
+          <li><span style="background:#8fa9b4"></span>سيراميك</li>
+        </ul>
+      </div>
+
       <div class="card">
         <div class="card__head">
           <div class="card__title">
@@ -332,5 +396,6 @@
   </div>
 
   <script src="./app.js"></script>
+  <script src="./twin.js"></script>
 </body>
 </html>

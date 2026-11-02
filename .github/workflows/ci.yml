@@ -151,6 +151,7 @@ jobs:
       - name: فحص الصياغة
         run: |
           node --check preview/app.js
+          node --check preview/twin.js
           node --check tools/mock_ruview_server.mjs
 
       - name: توليد إطار تجريبي والتحقق من الحقول
