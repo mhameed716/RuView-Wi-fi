@@ -7,18 +7,25 @@ import '../models/connection_settings.dart';
 import '../models/connection_status.dart';
 import 'sensing_transport.dart';
 
-/// عميل WebSocket لمسار `/ws/sensing` في بوابة RuView.
+/// عميل بيانات الاستشعار من بوابة RuView.
 ///
-/// المزايا:
-///  • مصادقة Bearer على ترقية الاتصال (مقبول للعملاء الأصليين — ADR-272).
-///  • إعادة اتصال تلقائي بتباعد أسّي مع تشويش عشوائي.
-///  • إبقاء الاتصال حيًّا عبر ping دوري (يكشف الشبكة الميتة).
-///  • تحويل أخطاء الشبكة إلى رسائل عربية مفهومة.
+/// لماذا ليس WebSocket فقط؟ لأن البوابات في الواقع ثلاثة أنواع:
+///  1. بوابة RuView على `ws://host:8765/ws/sensing` (المسار الرسمي للاستشعار).
+///  2. خادم الوضعية على `ws://host:8000/api/v1/stream/pose` (DensePose).
+///  3. خادم يرفض ترقية WebSocket لكنه يخدم REST
+///     (`GET /api/v1/sensing/latest`) — وهذا حال كثير من الإعدادات خلف
+///     بروكسي/جدار ناري يمنع الترقية.
+///
+/// لذلك يجرّب العميل المسارين ثم ينتقل تلقائيًا إلى **وضع REST** بدل أن يظل
+/// يعيد المحاولة بلا نهاية. وكل سبب فشل يُترجم إلى رسالة عربية صريحة تحمل
+/// رمز HTTP، حتى يعرف المستخدم أن المنفذ ليس بوابة RuView أصلًا.
 class WebSocketSensingTransport implements SensingTransport {
   WebSocketSensingTransport({
     this.connectTimeout = const Duration(seconds: 8),
     this.pingInterval = const Duration(seconds: 20),
     this.maxRetries = 0,
+    this.pollInterval = const Duration(milliseconds: 300),
+    this.restTimeout = const Duration(seconds: 3),
     this.onFrameRate,
   });
 
@@ -31,8 +38,26 @@ class WebSocketSensingTransport implements SensingTransport {
   /// 0 = محاولات غير محدودة (مع سقف زمني 30 ثانية بين المحاولات).
   final int maxRetries;
 
+  /// فترة استطلاع REST عند تعذّر WebSocket.
+  final Duration pollInterval;
+
+  /// مهلة طلب REST الواحد (أقصر من مهلة WS كي لا يتعلّق الاكتشاف).
+  final Duration restTimeout;
+
   /// مراقب اختياري لمعدل وصول الإطارات (Hz).
   final void Function(double hz)? onFrameRate;
+
+  /// مسارات WebSocket التي تدعمها بوابات RuView.
+  static const List<String> wsPaths = <String>[
+    '/ws/sensing',
+    '/api/v1/stream/pose',
+  ];
+
+  /// مسار REST البديل (يوفر أحدث إطار استشعار).
+  static const String restPath = '/api/v1/sensing/latest';
+
+  /// أقصى عدد إخفاقات متتالية في وضع REST قبل إعادة المحاولة من جديد.
+  static const int restFailureLimit = 3;
 
   final StreamController<TransportEvent> _events =
       StreamController<TransportEvent>.broadcast();
@@ -40,10 +65,15 @@ class WebSocketSensingTransport implements SensingTransport {
 
   WebSocket? _socket;
   HttpClient? _client;
+  HttpClient? _restClient;
   ConnectionSettings? _settings;
   Timer? _retryTimer;
+  Timer? _restTimer;
   bool _disposed = false;
   bool _manuallyClosed = false;
+  bool _restMode = false;
+  int _restFailures = 0;
+  int _pathIndex = 0;
   int _attempt = 0;
   int _epoch = 0;
   DateTime? _lastFrameAt;
@@ -55,7 +85,10 @@ class WebSocketSensingTransport implements SensingTransport {
   Stream<TransportEvent> get events => _events.stream;
 
   @override
-  bool get isActive => _socket != null;
+  bool get isActive => _socket != null || _restMode;
+
+  /// هل نعمل الآن عبر استطلاع REST بدل WebSocket؟
+  bool get usesRestFallback => _restMode;
 
   double get frameRateHz => _frameRate;
 
@@ -64,20 +97,25 @@ class WebSocketSensingTransport implements SensingTransport {
     _settings = settings;
     _manuallyClosed = false;
     _attempt = 0;
+    _pathIndex = 0;
+    _stopRest();
     await _open();
   }
 
   Future<void> _open() async {
-    if (_disposed || _manuallyClosed) return;
+    if (_disposed || _manuallyClosed || _restMode) return;
     final ConnectionSettings? settings = _settings;
     if (settings == null) return;
 
-    final Uri? uri = settings.webSocketUri;
-    if (uri == null) {
+    final Uri? base = settings.webSocketUri;
+    if (base == null) {
       _emit(TransportEvent.failed('عنوان أو منفذ غير صالح'));
       return;
     }
 
+    final Uri uri = _pathIndex == 0
+        ? base
+        : base.replace(path: wsPaths[_pathIndex]);
     final int epoch = ++_epoch;
     _emit(TransportEvent.connecting());
 
@@ -97,6 +135,8 @@ class WebSocketSensingTransport implements SensingTransport {
         return;
       }
 
+      _stopRest();
+      _pathIndex = 0;
       _socket = socket;
       socket.pingInterval = pingInterval;
       _attempt = 0;
@@ -113,13 +153,178 @@ class WebSocketSensingTransport implements SensingTransport {
       );
     } on TimeoutException {
       _closeQuietly();
-      _emit(TransportEvent.failed('انتهت مهلة الاتصال (${connectTimeout.inSeconds} ث)'));
-      _scheduleReconnect();
+      await _handleOpenFailure(
+        uri,
+        error: null,
+        transient: true,
+        message: 'انتهت مهلة الاتصال (${connectTimeout.inSeconds} ث)',
+      );
     } catch (error) {
       _closeQuietly();
-      _emit(TransportEvent.failed(_humanize(error)));
-      _scheduleReconnect();
+      await _handleOpenFailure(
+        uri,
+        error: error,
+        transient: error is SocketException,
+      );
     }
+  }
+
+  /// فشل فتح WebSocket: جرّب المسار التالي، ثم REST، ثم أعلن سببًا صريحًا.
+  Future<void> _handleOpenFailure(
+    Uri uri, {
+    required Object? error,
+    required bool transient,
+    String? message,
+  }) async {
+    if (_disposed || _manuallyClosed) return;
+
+    final int? status = await _probeStatus(uri);
+    // «رفض» = الخادم موجود لكنه لم يرقِّ الاتصال (ليست مشكلة شبكة عابرة).
+    final bool rejected = error is WebSocketException ||
+        (status != null && status != HttpStatus.switchingProtocols);
+    final bool permanent = rejected && !transient;
+
+    if (permanent && _pathIndex < wsPaths.length - 1) {
+      _pathIndex++;
+      await _open();
+      return;
+    }
+
+    if (permanent) {
+      final String reason =
+          status == null ? _humanize(error) : _describeStatus(status);
+      if (await _tryRestMode(reason)) return;
+      _emit(TransportEvent.failed(reason));
+      return; // رفض دائم: لا فائدة من إعادة المحاولة كل 30 ثانية.
+    }
+
+    _emit(TransportEvent.failed(message ?? _humanize(error)));
+    if (transient) _scheduleReconnect();
+  }
+
+  /// هل الخادم يردّ على نفس المسار عبر HTTP؟ نستخدم رمز الحالة للتشخيص.
+  Future<int?> _probeStatus(Uri uri) async {
+    final bool secure = _settings?.secure == true;
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 2);
+    try {
+      final Uri httpUri = uri.replace(scheme: secure ? 'https' : 'http');
+      final HttpClientRequest request = await client
+          .getUrl(httpUri)
+          .timeout(const Duration(seconds: 2));
+      request.headers.set('User-Agent', 'RuView-WiFi/1.4');
+      final HttpClientResponse response =
+          await request.close().timeout(const Duration(seconds: 2));
+      final int status = response.statusCode;
+      await response.drain<void>();
+      return status;
+    } catch (_) {
+      return null;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  Uri? get _restUri {
+    final ConnectionSettings? settings = _settings;
+    if (settings == null || !settings.isValid) return null;
+    return Uri(
+      scheme: settings.secure ? 'https' : 'http',
+      host: settings.host.trim(),
+      port: settings.port,
+      path: restPath,
+    );
+  }
+
+  /// يحاول تشغيل وضع REST. يعيد `true` إذا وصل إطار صالح.
+  Future<bool> _tryRestMode(String reason) async {
+    final Map<String, dynamic>? first = await _fetchLatest();
+    if (first == null || _disposed || _manuallyClosed) return false;
+
+    _restMode = true;
+    _restFailures = 0;
+    _registerFrameTick();
+    _emit(
+      TransportEvent.connected(
+        message: 'وضع REST — $reason',
+      ),
+    );
+    _emit(TransportEvent.data(first));
+
+    _restTimer?.cancel();
+    _restTimer = Timer.periodic(pollInterval, (_) => unawaited(_pollOnce()));
+    return true;
+  }
+
+  Future<void> _pollOnce() async {
+    if (_disposed || _manuallyClosed || !_restMode) return;
+    final Map<String, dynamic>? frame = await _fetchLatest();
+    if (frame == null) {
+      _restFailures++;
+      if (_restFailures >= restFailureLimit) {
+        _stopRest();
+        _pathIndex = 0;
+        _emit(
+          TransportEvent.failed(
+            'توقّف وضع REST — الخادم لم يُرسل بيانات ($restFailureLimit محاولات)',
+          ),
+        );
+        _scheduleReconnect();
+      }
+      return;
+    }
+    _restFailures = 0;
+    _registerFrameTick();
+    _emit(TransportEvent.data(frame));
+  }
+
+  Future<Map<String, dynamic>?> _fetchLatest() async {
+    final Uri? uri = _restUri;
+    if (uri == null) return null;
+    try {
+      final HttpClient client =
+          _restClient ??= HttpClient()..connectionTimeout = restTimeout;
+      final HttpClientRequest request =
+          await client.getUrl(uri).timeout(restTimeout);
+      request.headers.set('User-Agent', 'RuView-WiFi/1.4');
+      final String? token = _settings?.authToken.trim();
+      if (token != null && token.isNotEmpty) {
+        request.headers.set('Authorization', 'Bearer $token');
+      }
+      final HttpClientResponse response =
+          await request.close().timeout(restTimeout);
+      if (response.statusCode != 200) {
+        await response.drain<void>();
+        return null;
+      }
+      final String body =
+          await response.transform(utf8.decoder).join().timeout(restTimeout);
+      final Object? decoded = jsonDecode(body);
+      final Map<String, dynamic>? map = _asStringMap(decoded);
+      if (map == null || !_looksLikeSensing(map)) return null;
+      return map;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Map<String, dynamic>? _asStringMap(Object? decoded) {
+    if (decoded is Map<String, dynamic>) return decoded;
+    if (decoded is Map) {
+      return decoded.map<String, dynamic>(
+        (Object? key, Object? value) => MapEntry<String, dynamic>('$key', value),
+      );
+    }
+    return null;
+  }
+
+  static bool _looksLikeSensing(Map<String, dynamic> map) {
+    final Object? type = map['type'];
+    if (type is String && type == 'sensing_update') return true;
+    return map.containsKey('classification') ||
+        map.containsKey('features') ||
+        map.containsKey('nodes') ||
+        map.containsKey('persons');
   }
 
   void _handlePayload(Object? payload) {
@@ -142,19 +347,10 @@ class WebSocketSensingTransport implements SensingTransport {
     if (trimmed.isEmpty) return;
     try {
       final Object? decoded = jsonDecode(trimmed);
-      if (decoded is Map<String, dynamic>) {
+      final Map<String, dynamic>? map = _asStringMap(decoded);
+      if (map != null) {
         _registerFrameTick();
-        _emit(TransportEvent.data(decoded));
-      } else if (decoded is Map) {
-        _registerFrameTick();
-        _emit(
-          TransportEvent.data(
-            decoded.map<String, dynamic>(
-              (Object? key, Object? value) =>
-                  MapEntry<String, dynamic>('$key', value),
-            ),
-          ),
-        );
+        _emit(TransportEvent.data(map));
       }
     } catch (_) {
       // ليست حزمة استشعار — يمكن أن تكون رسالة ترحيب نصية من الخادم.
@@ -187,7 +383,7 @@ class WebSocketSensingTransport implements SensingTransport {
   }
 
   void _scheduleReconnect() {
-    if (_disposed || _manuallyClosed) return;
+    if (_disposed || _manuallyClosed || _restMode) return;
     if (maxRetries > 0 && _attempt >= maxRetries) {
       _emit(TransportEvent.failed('تعذّر الاتصال بعد $_attempt محاولات'));
       return;
@@ -212,6 +408,15 @@ class WebSocketSensingTransport implements SensingTransport {
     });
   }
 
+  void _stopRest() {
+    _restTimer?.cancel();
+    _restTimer = null;
+    _restMode = false;
+    _restFailures = 0;
+    _restClient?.close(force: true);
+    _restClient = null;
+  }
+
   void _closeQuietly() {
     final WebSocket? socket = _socket;
     _socket = null;
@@ -228,6 +433,7 @@ class WebSocketSensingTransport implements SensingTransport {
     _epoch++;
     _retryTimer?.cancel();
     _retryTimer = null;
+    _stopRest();
     final WebSocket? socket = _socket;
     if (socket != null) {
       try {
@@ -245,6 +451,7 @@ class WebSocketSensingTransport implements SensingTransport {
     _disposed = true;
     _manuallyClosed = true;
     _retryTimer?.cancel();
+    _stopRest();
     _closeQuietly();
     await _events.close();
   }
@@ -255,8 +462,26 @@ class WebSocketSensingTransport implements SensingTransport {
     }
   }
 
+  /// رسالة عربية صريحة حسب رمز HTTP الفعلي.
+  static String _describeStatus(int? status) {
+    if (status == null) return 'تعذّر الوصول إلى الخادم، تحقّق من الشبكة';
+    if (status == 401 || status == 403) {
+      return 'رفض الخادم الاتصال ($status) — تحقّق من رمز الوصول';
+    }
+    if (status == 404) {
+      return 'لا يوجد مسار WebSocket على هذا المنفذ (404) — '
+          'هذا المنفذ ليس بوابة RuView، جرّب 8765 أو 3000 أو 3001';
+    }
+    if (status == 426) {
+      return 'الخادم يطلب ترقية WebSocket (426) — المسار مختلف، جرّب مسارًا آخر';
+    }
+    return 'الخادم يردّ HTTP $status ولا يرقّي الاتصال إلى WebSocket — '
+        'هذا ليس منفذ بوابة RuView (8765 / 3000 / 3001)';
+  }
+
   /// تحويل أخطاء المقابس إلى رسائل عربية قابلة للتنفيذ.
-  static String _humanize(Object error) {
+  static String _humanize(Object? error) {
+    if (error == null) return 'تعذّر فتح الاتصال بالخادم';
     if (error is TimeoutException) {
       return 'انتهت مهلة الاتصال بالخادم';
     }

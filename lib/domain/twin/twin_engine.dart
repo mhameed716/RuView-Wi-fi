@@ -6,6 +6,7 @@ import 'body_mesh.dart';
 import 'body_profile.dart';
 import 'body_shape.dart';
 import 'cloth_simulator.dart';
+import 'pose_synthesizer.dart';
 import 'room_model.dart';
 import 'room_reconstructor.dart';
 import 'shape_completion.dart';
@@ -46,6 +47,7 @@ class TwinEngine {
   DateTime? _lastMeshAt;
   PostureKind _lastPosture = PostureKind.unknown;
   BodyShape _lastShape = BodyShape.average;
+  double _phase = 0;
 
   TwinState get state => _state;
 
@@ -72,33 +74,53 @@ class TwinEngine {
   }) {
     final RoomModel room = _room.ingest(frame);
 
-    final bool presence = frame.hasPresence && keypoints.isNotEmpty;
+    // الحضور وحده يكفي لبناء الجسم. اشتراط مفاصل البوابة كان يترك المجسّم
+    // فارغًا على كل بوابة ترسل classification/features بلا keypoints
+    // (وضع «الاستشعار فقط»)، فيظهر «لا أجسام» رغم وجود شخص.
+    final bool presence = frame.hasPresence;
     if (!presence) {
-      // لا جسم مرصود الآن: نُبقي خريطة الغرفة ونخفي المجسّم.
-      _state = _state.copyWith(room: room, hasBody: false);
+      // لا جسم مرصود الآن: نُبقي خريطة الغرفة ونخفي المجسّم بالكامل
+      // (copyWith وحده يُبقي الشبكة القديمة فيظهر «شبح» جسم بعد المغادرة).
+      _state = TwinState.empty.copyWith(room: room);
       _lastShape = BodyShape.average;
       _lastMeshAt = null;
+      _phase = 0;
       if (keypoints.isEmpty) {
         _cloth.settle();
       }
       return _state;
     }
 
-    BodyShape shape = BodyShapeEstimator.estimate(
-      keypoints: keypoints,
-      posture: posture,
-    );
+    final bool poseFromServer = keypoints.length >= 5;
+    _phase += NumUtils.clampRange(elapsed.inMilliseconds / 1000, 0.008, 0.05);
 
-    final Map<String, Vec3> observed = JointProjector.project(
-      keypoints: keypoints,
-      shape: shape,
-    );
+    // بلا مفاصل: سابقة أنثروبومترية مستقرة بدل تقدير مشوّه من نقاط قليلة.
+    BodyShape shape = poseFromServer
+        ? BodyShapeEstimator.estimate(
+            keypoints: keypoints,
+            posture: posture,
+          )
+        : BodyShape.average;
+
+    final Map<String, Vec3> observed = poseFromServer
+        ? JointProjector.project(keypoints: keypoints, shape: shape)
+        : const <String, Vec3>{};
 
     final ShapeCompletionResult completion = ShapeCompleter.complete(
       observed: observed,
       shape: shape,
       posture: posture,
     );
+
+    // هيكل مستنتج؟ نضيف تنفّسًا خفيفًا ليبدو حيًّا لا تمثالًا.
+    final Map<String, Vec3> posedJoints = poseFromServer
+        ? completion.joints
+        : PoseSynthesizer.alive(
+            completion.joints,
+            phase: _phase,
+            motion: frame.motionIntensity,
+            posture: posture,
+          );
 
     final List<double> gaitVector = gait?.toVector() ?? const <double>[];
     final BodySignature signature = BodySignature.fromShape(
@@ -123,7 +145,7 @@ class TwinEngine {
     BodyMesh mesh = _state.mesh;
     bool clothReset = false;
     if (rebuildMesh) {
-      mesh = BodyMeshBuilder.build(joints: completion.joints, shape: shape);
+      mesh = BodyMeshBuilder.build(joints: posedJoints, shape: shape);
       mesh = ShapeCompleter.smooth(mesh, iterations: 2);
       _lastMeshAt = now;
       _lastPosture = posture;
@@ -131,7 +153,7 @@ class TwinEngine {
     }
 
     if (clothReset || !_cloth.isReady) {
-      _cloth.reset(joints: completion.joints, shape: shape);
+      _cloth.reset(joints: posedJoints, shape: shape);
     }
 
     final double seconds = NumUtils.clampRange(
@@ -148,7 +170,7 @@ class TwinEngine {
     _lastShape = shape;
     _state = TwinState(
       shape: shape,
-      joints: completion.joints,
+      joints: posedJoints,
       mesh: mesh,
       cloth: _cloth.particles,
       completionScore: completion.score,
@@ -158,6 +180,7 @@ class TwinEngine {
       posture: posture,
       hasBody: true,
       updatedAt: now,
+      poseInferred: !poseFromServer,
     );
     return _state;
   }

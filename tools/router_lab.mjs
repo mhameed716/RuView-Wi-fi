@@ -280,7 +280,40 @@ await withLab('خادم على حاسوب داخل الشبكة (192.168.5.77)',
   }
 });
 
-/** 7) لا خادم على الشبكة: نتيجة فارغة سريعة بلا تعليق. */
+/** 7) لوحة ويب عادية على 8080 بجانب البوابة الحقيقية: لا تتفوّق عليها. */
+await withLab('لوحة ويب 8080 لا تُخدع بها بوابة RuView', async () => {
+  const plain = await startPlainServer({ host: '127.0.6.1', port: 8080 });
+  const gateway = await startGateway({
+    host: '127.0.6.1',
+    port: 8765,
+    answerDiscovery: false,
+  });
+  try {
+    const context = contextFromAddresses(['127.0.6.20'], {
+      allowLoopback: true,
+    });
+    const found = await scan(context);
+    const page = found.find((c) => c.port === 8080);
+    assert(page, 'لم يُسجَّل منفذ اللوحة كمرشّح');
+    assert(
+      !page.looksLikeRuView,
+      'صفحة HTML فيها كلمة sensing اعتُبرت بوابة RuView',
+    );
+    assert(
+      found[0].port === 8765 && found[0].looksLikeRuView,
+      `البوابة الحقيقية لم تتصدّر: ${found[0].host}:${found[0].port}`,
+    );
+    const live = await connectAndReceive('127.0.6.1', 8765);
+    assert(live.ok, `فشل الاتصال: ${live.error}`);
+    return 'البوابة على 8765 تقدّمت، واللوحة بقيت مرشّحًا ضعيفًا';
+  } finally {
+    await gateway.close();
+    await plain.close();
+    await sleep(60);
+  }
+});
+
+/** 8) لا خادم على الشبكة: نتيجة فارغة سريعة بلا تعليق. */
 await withLab('شبكة بلا خادم RuView', async () => {
   const context = contextFromAddresses(['127.99.0.7'], {
     allowLoopback: true,

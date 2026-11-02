@@ -22,6 +22,7 @@ class TwinState {
     required this.posture,
     required this.hasBody,
     required this.updatedAt,
+    this.poseInferred = false,
   });
 
   static const TwinState empty = TwinState(
@@ -36,6 +37,7 @@ class TwinState {
     posture: PostureKind.unknown,
     hasBody: false,
     updatedAt: null,
+    poseInferred: false,
   );
 
   final BodyShape shape;
@@ -63,7 +65,14 @@ class TwinState {
 
   final DateTime? updatedAt;
 
+  /// هل الهيكل مستنتج من الحضور بدل مفاصل البوابة؟ (البوابة لا ترسل keypoints)
+  final bool poseInferred;
+
   bool get hasMesh => !mesh.isEmpty;
+
+  /// وصف عربي لمصدر الهيكل — يُعرض للمستخدم بدل نسبة مضلّلة.
+  String get poseSourceLabel =>
+      poseInferred ? 'هيكل مستنتج من الحضور' : 'مفاصل من البوابة';
 
   String get completionLabel =>
       '${(completionScore * 100).round()}% مرصود · '
@@ -81,6 +90,7 @@ class TwinState {
     BodyMatch? match,
     bool clearMatch = false,
     bool? hasBody,
+    bool? poseInferred,
   }) {
     return TwinState(
       shape: shape,
@@ -94,6 +104,7 @@ class TwinState {
       posture: posture,
       hasBody: hasBody ?? this.hasBody,
       updatedAt: updatedAt,
+      poseInferred: poseInferred ?? this.poseInferred,
     );
   }
 }

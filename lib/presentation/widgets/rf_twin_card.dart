@@ -102,11 +102,15 @@ class RfTwinCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _CompletionBar(
-            value: twin.completionScore,
-            label: twin.hasMesh
-                ? 'إكمال الشكل: ${(twin.completionScore * 100).round()}% · '
-                    '${twin.mesh.vertexCount} رأس شبكة'
-                : 'بانتظار رصد جسم',
+            value: twin.poseInferred ? 1 : twin.completionScore,
+            label: !twin.hasMesh
+                ? 'بانتظار رصد جسم'
+                : twin.poseInferred
+                    ? 'هيكل مستنتج من الحضور · '
+                        '${twin.mesh.vertexCount} رأس شبكة · '
+                        'البوابة لا ترسل مفاصل (keypoints)'
+                    : 'إكمال الشكل: ${(twin.completionScore * 100).round()}% · '
+                        '${twin.mesh.vertexCount} رأس شبكة',
           ),
           const SizedBox(height: 12),
           Row(

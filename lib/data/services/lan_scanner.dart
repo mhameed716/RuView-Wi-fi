@@ -230,7 +230,7 @@ class LanCandidate {
 ///     لتسريع الاتصال على الشبكات الكبيرة.
 class LanScanner {
   LanScanner({
-    this.ports = const <int>[8765, 8080, 3000, 3001],
+    this.ports = const <int>[8765, 3000, 3001, 8000, 8080],
     this.connectTimeout = const Duration(milliseconds: 220),
     this.concurrency = 96,
     this.maxScanDuration = const Duration(seconds: 9),
@@ -238,7 +238,8 @@ class LanScanner {
     this.useBroadcast = true,
   });
 
-  /// منافذ RuView الشائعة (WS ثم HTTP ثم أمناء الاستشعار).
+  /// منافذ RuView الشائعة: 8765 (WS للاستشعار)، 3000/3001 (REST/WS الرسمي)،
+  /// 8000 (مسار الوضعية `/api/v1/stream/pose`)، ثم 8080 (أدوات/معاينات).
   final List<int> ports;
   final Duration connectTimeout;
   final int concurrency;
@@ -346,12 +347,7 @@ class LanScanner {
         }
         final String text =
             String.fromCharCodes(buffer.take(2048)).toLowerCase();
-        // لا يكفي أن يردّ المنفذ 200: أي لوحة راوتر تفعل ذلك. نطلب أثرًا
-        // من RuView نفسه في جسم الرد (وإلا فُضّل جهاز عشوائي على البوابة).
-        looksLikeRuView = text.contains('ruview') ||
-            text.contains('sensing') ||
-            text.contains('subcarrier') ||
-            text.contains('101 switching');
+        looksLikeRuView = _looksLikeRuViewBody(text);
       } catch (_) {
         // منفذ مفتوح لكنه لا يتحدّث HTTP — يبقى مرشّحًا ضعيفًا.
       }
@@ -443,6 +439,22 @@ class LanScanner {
       if (!exists) all.add(candidate);
     }
     return ranked(all);
+  }
+
+  /// بصمة خادم RuView من جسم الرد.
+  ///
+  /// لا يكفي أن يردّ المنفذ `200` (أي لوحة راوتر أو صفحة ويب تفعل ذلك)، ولا
+  /// مجرّد ورود كلمة «sensing» في صفحة HTML. نطلب أثرًا من JSON الخاص بـ
+  /// RuView أو من ترقية WebSocket فعلية.
+  static bool _looksLikeRuViewBody(String text) {
+    if (text.contains('sensing_update')) return true;
+    if (text.contains('subcarrier')) return true;
+    if (text.contains('101 switching protocols')) return true;
+    // مفاتيح JSON مثل "service":"ruview-gateway" أو {"ruview":true}
+    if (text.contains('"ruview')) return true;
+    if (text.contains('sensing_path')) return true;
+    if (text.contains('ws/sensing')) return true;
+    return false;
   }
 
   /// بثّ UDP للاكتشاف على منفذ [discoveryPort].

@@ -8,6 +8,7 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_theme.dart';
 import '../../core/utils/formatters.dart';
 import '../../core/utils/num_utils.dart';
+import '../../data/models/connection_settings.dart';
 import '../../data/models/gait_profile.dart';
 import '../../data/models/sensing_frame.dart';
 import '../../domain/monitoring/safety_state.dart';
@@ -83,7 +84,7 @@ class MonitorScreen extends StatelessWidget {
                       const SizedBox(height: 14),
                     ],
                     if (connection.isDataStale) ...<Widget>[
-                      const _StaleBanner(),
+                      _StaleBanner(transport: connection.transport),
                       const SizedBox(height: 14),
                     ],
                     NeonCard(
@@ -349,7 +350,18 @@ void unawaitedFuture(Future<Object?> future) {
 }
 
 class _StaleBanner extends StatelessWidget {
-  const _StaleBanner();
+  const _StaleBanner({this.transport = TransportKind.webSocket});
+
+  final TransportKind transport;
+
+  String get _message {
+    if (transport == TransportKind.udp) {
+      return 'يستمع التطبيق لحزم UDP لكن لا تصل أي حزمة — شغّل بوابة RuView '
+          'أو تحقّق من منفذ عُقد ESP32 (5005 افتراضيًا)، ولا يُرسم الجسم بلا بيانات';
+    }
+    return 'الاتصال قائم لكن البيانات متوقفة — تحقّق من البوابة أو العقد، '
+        'ولا يُرسم الجسم بلا بيانات استشعار';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -360,14 +372,18 @@ class _StaleBanner extends StatelessWidget {
         borderRadius: BorderRadius.circular(AppTheme.radiusMedium),
         border: Border.all(color: AppColors.warning.withAlpha(70)),
       ),
-      child: const Row(
+      child: Row(
         children: <Widget>[
-          Icon(Icons.hourglass_bottom_rounded, size: 16, color: AppColors.warning),
-          SizedBox(width: 9),
+          const Icon(
+            Icons.hourglass_bottom_rounded,
+            size: 16,
+            color: AppColors.warning,
+          ),
+          const SizedBox(width: 9),
           Expanded(
             child: Text(
-              'الاتصال قائم لكن البيانات متوقفة — تحقّق من البوابة أو العقد',
-              style: TextStyle(
+              _message,
+              style: const TextStyle(
                 fontSize: 11.5,
                 height: 1.5,
                 color: AppColors.textSecondary,

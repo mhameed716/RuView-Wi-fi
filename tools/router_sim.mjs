@@ -300,7 +300,12 @@ export function startPlainServer({ host = '127.0.0.1', port = 8080 } = {}) {
   const server = http.createServer((req, res) => {
     stats.http += 1;
     res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
-    res.end('<html><title>لوحة الراوتر</title><body>ok</body></html>');
+    // نص فيه كلمات RuView/sensing عن قصد: صفحة ويب عادية يجب ألا تُصنَّف بوابة.
+    res.end(
+      '<html><title>لوحة الراوتر</title><body>' +
+        'RuView Wi-Fi sensing dashboard preview' +
+        '</body></html>',
+    );
   });
   return new Promise((resolve, reject) => {
     server.once('error', reject);

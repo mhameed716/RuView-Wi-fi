@@ -344,8 +344,11 @@ class ConnectionViewModel extends ChangeNotifier {
 
   Future<void> _tryCandidates(List<LanCandidate> candidates) async {
     _phase = DiscoveryPhase.connecting;
+    // سقف زمني إجمالي: لا نُبقي المستخدم أمام «جارٍ المحاولة» بلا نهاية.
+    final Stopwatch budget = Stopwatch()..start();
     for (final LanCandidate candidate in candidates) {
       if (_disposed) return;
+      if (budget.elapsed > const Duration(seconds: 35)) break;
       _safeNotify(force: true);
       final bool ok = await _connectCandidate(candidate);
       if (ok) {
@@ -358,7 +361,10 @@ class ConnectionViewModel extends ChangeNotifier {
       }
     }
     _phase = DiscoveryPhase.failed;
-    _autoMessage = ArStrings.autoFailed;
+    final String? reason = _errorMessage;
+    _autoMessage = reason == null || reason.isEmpty
+        ? ArStrings.autoFailed
+        : '${ArStrings.autoFailed} — $reason';
   }
 
   /// يجرّب مرشّحًا واحدًا ويتحقق من وصول بيانات فعلية (لا يكفي فتح المقبس).

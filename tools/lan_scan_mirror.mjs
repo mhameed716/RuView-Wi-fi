@@ -14,7 +14,7 @@ import net from 'node:net';
 import dgram from 'node:dgram';
 import crypto from 'node:crypto';
 
-export const PORTS = [8765, 8080, 3000, 3001];
+export const PORTS = [8765, 3000, 3001, 8000, 8080];
 export const HOSTNAMES = ['ruview.local', 'ruview', 'ruview-gateway.local'];
 export const DISCOVERY_MAGIC = 'RUVIEW_DISCOVERY_V1';
 export const DISCOVERY_PORT = 5005;
@@ -158,6 +158,20 @@ export function candidateFromDiscovery(payload, fallbackHost) {
   };
 }
 
+/**
+ * بصمة خادم RuView من جسم الرد — مطابقة لدالة `_looksLikeRuViewBody` في Dart.
+ * لا يكفي ردّ 200 ولا ورود كلمة sensing في صفحة HTML.
+ */
+export function looksLikeRuViewBody(text) {
+  if (text.includes('sensing_update')) return true;
+  if (text.includes('subcarrier')) return true;
+  if (text.includes('101 switching protocols')) return true;
+  if (text.includes('"ruview')) return true;
+  if (text.includes('sensing_path')) return true;
+  if (text.includes('ws/sensing')) return true;
+  return false;
+}
+
 /** فحص منفذ واحد: TCP + طلب /health + مطابقة بصمة RuView. */
 export function probe(host, port, { isGateway = false, isSaved = false } = {}) {
   const started = Date.now();
@@ -200,11 +214,7 @@ export function probe(host, port, { isGateway = false, isSaved = false } = {}) {
       socket.on('data', (chunk) => {
         buffer = Buffer.concat([buffer, chunk]);
         const text = buffer.subarray(0, 2048).toString('utf8').toLowerCase();
-        const looksLikeRuView =
-          text.includes('ruview') ||
-          text.includes('sensing') ||
-          text.includes('subcarrier') ||
-          text.includes('101 switching');
+        const looksLikeRuView = looksLikeRuViewBody(text);
         if (looksLikeRuView) {
           clearTimeout(readTimer);
           socket.destroy();
@@ -227,10 +237,7 @@ export function probe(host, port, { isGateway = false, isSaved = false } = {}) {
           host,
           port,
           latencyMs,
-          looksLikeRuView:
-            text.includes('ruview') ||
-            text.includes('sensing') ||
-            text.includes('subcarrier'),
+          looksLikeRuView: looksLikeRuViewBody(text),
           isGateway,
           isSaved,
           transport: 'webSocket',
