@@ -22,6 +22,8 @@ import '../widgets/neon_button.dart';
 import '../widgets/neon_card.dart';
 import '../widgets/posture_status_card.dart';
 import '../widgets/presence_radar.dart';
+import '../widgets/rf_twin_card.dart';
+import '../widgets/room_reconstruction_panel.dart';
 import '../widgets/sleep_vitals_panel.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/vitals_panel.dart';
@@ -179,6 +181,21 @@ class MonitorScreen extends StatelessWidget {
                       summary: sensing.sleep,
                       breathingHistory: sensing.breathingHistory,
                       hasData: sensing.hasData,
+                    ),
+                    const SizedBox(height: 14),
+                    RfTwinCard(
+                      twin: sensing.twin,
+                      identityLabel: sensing.identityLabel,
+                      profiles: sensing.bodyProfiles,
+                      onEnroll: () =>
+                          unawaited(enrollBodyTwin(context, sensing)),
+                      onRemoveProfile: (String id) =>
+                          unawaited(sensing.removeBodyProfile(id)),
+                    ),
+                    const SizedBox(height: 14),
+                    RoomReconstructionPanel(
+                      room: sensing.room,
+                      onRescan: sensing.resetRoomScan,
                     ),
                     const SizedBox(height: 14),
                     ActivityLogPanel(

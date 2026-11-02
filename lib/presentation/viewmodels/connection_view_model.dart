@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 
@@ -7,7 +8,12 @@ import '../../data/models/connection_settings.dart';
 import '../../data/models/connection_status.dart';
 import '../../data/models/sensing_frame.dart';
 import '../../data/repositories/sensing_repository.dart';
+import '../../data/services/lan_scanner.dart';
+import '../../data/services/network_preferences_repository.dart';
 import '../../data/services/settings_repository.dart';
+
+/// مرحلة الاكتشاف التلقائي المعروضة في الواجهة.
+enum DiscoveryPhase { idle, searching, found, connecting, connected, notFound, failed }
 
 /// ViewModel شاشة لوحة التحكم: يملك حالة نموذج الاتصال، ويترجم أحداث
 /// المستودع إلى حالة واجهة قابلة للعرض (حالة، مدة، معدل تحديث، أخطاء).
@@ -15,11 +21,26 @@ class ConnectionViewModel extends ChangeNotifier {
   ConnectionViewModel({
     required SensingRepository repository,
     required SettingsRepository settingsRepository,
-  })  : _repository = repository,
-        _settingsRepository = settingsRepository;
+    LanScanner? scanner,
+    NetworkPreferencesRepository? networkPreferences,
+    NetworkWatcher? networkWatcher,
+    bool enableAutoDiscovery = true,
+  })  : _enableAutoDiscovery = enableAutoDiscovery,
+        _repository = repository,
+        _settingsRepository = settingsRepository,
+        _scanner = scanner ?? LanScanner(),
+        _networkPreferences =
+            networkPreferences ?? NetworkPreferencesRepository(),
+        _networkWatcher = networkWatcher ?? NetworkWatcher();
 
   final SensingRepository _repository;
   final SettingsRepository _settingsRepository;
+  final LanScanner _scanner;
+  final NetworkPreferencesRepository _networkPreferences;
+  final NetworkWatcher _networkWatcher;
+
+  /// تعطيل الاكتشاف (للاختبارات أو التشغيل اليدوي الصرف).
+  final bool _enableAutoDiscovery;
 
   StreamSubscription<ConnectionSnapshot>? _connectionSubscription;
   StreamSubscription<SensingFrame>? _framesSubscription;
@@ -36,6 +57,19 @@ class ConnectionViewModel extends ChangeNotifier {
   bool _secure = false;
   bool _showValidation = false;
   String? _formMessage;
+
+  // ── الاكتشاف والاتصال التلقائي ──────────────────────────────────────────
+  bool _autoConnect = true;
+  bool _autoBusy = false;
+  DiscoveryPhase _phase = DiscoveryPhase.idle;
+  List<LanCandidate> _candidates = const <LanCandidate>[];
+  NetworkContext _network = NetworkContext.offline;
+  DateTime? _lastScanAt;
+  String? _autoMessage;
+  LanCandidate? _lastEndpoint;
+  Completer<bool>? _pendingConnect;
+  Timer? _autoRetryTimer;
+  int _autoAttempts = 0;
 
   // حالة الاتصال
   ConnectionStatus _status = ConnectionStatus.disconnected;
@@ -134,11 +168,247 @@ class ConnectionViewModel extends ChangeNotifier {
     _authToken = saved.authToken;
     _secure = saved.secure;
 
+    _autoConnect = await _networkPreferences.loadAutoConnect();
+    _lastEndpoint = await _networkPreferences.loadLastEndpoint();
+
     _connectionSubscription =
         _repository.connection.listen(_handleSnapshot);
     _framesSubscription = _repository.frames.listen(_handleFrame);
     _initialized = true;
-    _safeNotify();
+    _safeNotify(force: true);
+
+    if (_offlineEnvironment || !_enableAutoDiscovery) return;
+
+    // الاتصال التلقائي: يعمل بمجرّد ارتباط الجهاز بأي شبكة.
+    _networkWatcher.start(_handleNetworkUpdate);
+    if (_autoConnect) {
+      unawaited(autoConnect());
+    }
+  }
+
+  // ── الاكتشاف والاتصال التلقائي ─────────────────────────────────────────
+  /// هل الاتصال التلقائي مُفعّل؟
+  bool get autoConnect => _autoConnect;
+
+  /// مرحلة الاكتشاف الحالية.
+  DiscoveryPhase get discoveryPhase => _phase;
+
+  /// المرشّحون المكتشفون على الشبكة (مرتّبون بالأفضلية).
+  List<LanCandidate> get candidates => _candidates;
+
+  /// سياق الشبكة الحالي (العنوان المحلي والبوابة).
+  NetworkContext get network => _network;
+
+  String get networkLabel => _network.label;
+
+  DateTime? get lastScanAt => _lastScanAt;
+
+  /// رسالة توضيحية عن نتيجة الاكتشاف.
+  String? get autoMessage => _autoMessage;
+
+  /// هل نحن وسط بحث/محاولة اتصال؟
+  bool get isDiscovering =>
+      _phase == DiscoveryPhase.searching || _phase == DiscoveryPhase.connecting;
+
+  /// آخر نقطة اتصال ناجحة (تُجرَّب أولًا في المرة القادمة).
+  LanCandidate? get lastEndpoint => _lastEndpoint;
+
+  /// وصف عربي لحالة الاكتشاف.
+  String get discoveryLabel {
+    switch (_phase) {
+      case DiscoveryPhase.idle:
+        return _autoConnect ? 'الاتصال التلقائي جاهز' : 'الاتصال التلقائي متوقف';
+      case DiscoveryPhase.searching:
+        return 'جارٍ البحث في الشبكة…';
+      case DiscoveryPhase.found:
+        return 'عُثر على ${_candidates.length} مرشّح';
+      case DiscoveryPhase.connecting:
+        return 'جارٍ تجربة الاتصال…';
+      case DiscoveryPhase.connected:
+        return 'متصل تلقائيًا';
+      case DiscoveryPhase.notFound:
+        return 'لم يُعثر على خادم RuView';
+      case DiscoveryPhase.failed:
+        return 'تعذّر الاتصال التلقائي';
+    }
+  }
+
+  /// بيئة الاختبار: نُعطّل الشبكة تمامًا كي لا تعتمد الاختبارات على مقابس.
+  static bool get _offlineEnvironment =>
+      Platform.environment['FLUTTER_TEST'] == 'true';
+
+  /// تشغيل/إيقاف الاتصال التلقائي (يُحفظ فورًا).
+  Future<void> setAutoConnect(bool value) async {
+    if (_autoConnect == value) return;
+    _autoConnect = value;
+    _phase = DiscoveryPhase.idle;
+    await _networkPreferences.saveAutoConnect(value);
+    _safeNotify(force: true);
+    if (value && !isConnected) {
+      unawaited(autoConnect());
+    }
+  }
+
+  /// إعادة المسح يدويًا (مسح عميق).
+  Future<void> rescan() => autoConnect(deep: true, force: true);
+
+  /// اتصال مباشر بمرشّح مكتشف.
+  Future<void> connectToCandidate(LanCandidate candidate) async {
+    _autoBusy = true;
+    _phase = DiscoveryPhase.connecting;
+    _safeNotify(force: true);
+    try {
+      final bool ok = await _connectCandidate(candidate);
+      _phase = ok ? DiscoveryPhase.connected : DiscoveryPhase.failed;
+      _autoMessage =
+          ok ? 'تم الاتصال بـ ${candidate.label}' : ArStrings.autoFailed;
+      if (ok) {
+        _lastEndpoint = candidate;
+        await _networkPreferences.saveLastEndpoint(candidate);
+      }
+    } finally {
+      _autoBusy = false;
+      _safeNotify(force: true);
+    }
+  }
+
+  /// الاكتشاف + الاتصال التلقائي على أي شبكة.
+  Future<void> autoConnect({bool deep = true, bool force = false}) async {
+    if (_disposed || _autoBusy) return;
+    if (!_autoConnect && !force) return;
+    if (isConnected && !force) return;
+
+    _autoBusy = true;
+    _phase = DiscoveryPhase.searching;
+    _autoMessage = null;
+    _safeNotify(force: true);
+
+    try {
+      final NetworkContext context =
+          _network.isConnected ? _network : await NetworkContext.detect();
+      _network = context;
+      if (!context.isConnected) {
+        _phase = DiscoveryPhase.notFound;
+        _autoMessage = ArStrings.autoNoNetwork;
+        return;
+      }
+
+      final Set<String> savedHosts = <String>{
+        if (_lastEndpoint != null) _lastEndpoint!.host,
+        _host,
+      };
+      final List<LanCandidate> found = await _scanner.scan(
+        context: context,
+        savedHosts: savedHosts,
+        deep: deep,
+      );
+      _candidates = found;
+      _lastScanAt = DateTime.now();
+
+      if (found.isEmpty) {
+        _phase = DiscoveryPhase.notFound;
+        _autoMessage = ArStrings.autoNotFound;
+        return;
+      }
+
+      _phase = DiscoveryPhase.found;
+      _safeNotify(force: true);
+      await _tryCandidates(found.take(4).toList(growable: false));
+    } catch (_) {
+      _phase = DiscoveryPhase.failed;
+      _autoMessage = ArStrings.autoFailed;
+    } finally {
+      _autoBusy = false;
+      _safeNotify(force: true);
+    }
+  }
+
+  Future<void> _tryCandidates(List<LanCandidate> candidates) async {
+    _phase = DiscoveryPhase.connecting;
+    for (final LanCandidate candidate in candidates) {
+      if (_disposed) return;
+      _safeNotify(force: true);
+      final bool ok = await _connectCandidate(candidate);
+      if (ok) {
+        _phase = DiscoveryPhase.connected;
+        _autoMessage = 'تم الاتصال تلقائيًا بـ ${candidate.label}';
+        _lastEndpoint = candidate;
+        _autoAttempts = 0;
+        await _networkPreferences.saveLastEndpoint(candidate);
+        return;
+      }
+    }
+    _phase = DiscoveryPhase.failed;
+    _autoMessage = ArStrings.autoFailed;
+  }
+
+  /// يجرّب مرشّحًا واحدًا ويتحقق من وصول بيانات فعلية (لا يكفي فتح المقبس).
+  Future<bool> _connectCandidate(LanCandidate candidate) async {
+    _host = candidate.host;
+    _portText = candidate.port.toString();
+    _transport = candidate.transport;
+    _errorMessage = null;
+    _formMessage = null;
+    _safeNotify(force: true);
+
+    final Completer<bool> completer = Completer<bool>();
+    _pendingConnect = completer;
+    try {
+      await _settingsRepository.save(draftSettings);
+      await _repository.connect(draftSettings);
+    } catch (_) {
+      _pendingConnect = null;
+      return false;
+    }
+
+    final bool live = await Future.any<bool>(<Future<bool>>[
+      completer.future,
+      Future<bool>.delayed(const Duration(seconds: 9), () => false),
+    ]);
+    _pendingConnect = null;
+    if (!live) {
+      await _repository.disconnect();
+      return false;
+    }
+
+    final int before = _frameCount;
+    for (int i = 0; i < 16; i++) {
+      if (_disposed) return false;
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      if (_frameCount > before) return true;
+      if (!_status.isLive) return false;
+    }
+
+    await _repository.disconnect();
+    return false;
+  }
+
+  void _handleNetworkUpdate(NetworkContext context, bool changed) {
+    if (_disposed) return;
+    final NetworkContext previous = _network;
+    _network = context;
+    if (!changed) return;
+    if (previous.fingerprint == context.fingerprint) return;
+
+    // شبكة جديدة → أعد المحاولة من الصفر.
+    _autoAttempts = 0;
+    _autoRetryTimer?.cancel();
+    _safeNotify(force: true);
+    if (_autoConnect && !isConnected) {
+      unawaited(autoConnect());
+    }
+  }
+
+  void _scheduleAutoRetry() {
+    if (!_autoConnect || _disposed) return;
+    if (_autoAttempts >= 5) return;
+    _autoAttempts++;
+    final Duration delay = Duration(seconds: 4 * _autoAttempts);
+    _autoRetryTimer?.cancel();
+    _autoRetryTimer = Timer(delay, () {
+      if (_disposed || isConnected) return;
+      unawaited(autoConnect(deep: false));
+    });
   }
 
   // ── تعديلات النموذج ────────────────────────────────────────────────────
@@ -222,6 +492,10 @@ class ConnectionViewModel extends ChangeNotifier {
   Future<void> disconnect() async {
     await _repository.disconnect();
     _errorMessage = null;
+    _phase = DiscoveryPhase.idle;
+    _autoMessage = null;
+    _autoRetryTimer?.cancel();
+    _autoAttempts = 0;
     _safeNotify(force: true);
   }
 
@@ -253,6 +527,19 @@ class ConnectionViewModel extends ChangeNotifier {
       case ConnectionStatus.connecting:
       case ConnectionStatus.reconnecting:
         if (previous.isLive) _connectedSince = null;
+    }
+
+    final Completer<bool>? pending = _pendingConnect;
+    if (pending != null && !pending.isCompleted) {
+      if (snapshot.status.isLive) {
+        pending.complete(true);
+      } else if (snapshot.status.hasError) {
+        pending.complete(false);
+      }
+    }
+
+    if (snapshot.status.hasError && previous.isLive) {
+      _scheduleAutoRetry();
     }
 
     _syncTicker();
@@ -306,6 +593,10 @@ class ConnectionViewModel extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _ticker?.cancel();
+    _autoRetryTimer?.cancel();
+    _networkWatcher.dispose();
+    final Completer<bool>? pending = _pendingConnect;
+    if (pending != null && !pending.isCompleted) pending.complete(false);
     unawaited(_connectionSubscription?.cancel());
     unawaited(_framesSubscription?.cancel());
     super.dispose();

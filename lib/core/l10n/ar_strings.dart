@@ -111,6 +111,12 @@ abstract final class ArStrings {
       'لم يتم الاتصال بأي بوابة. البطاقات تعرض آخر قراءة معروفة.';
   static const String connectionErrorHint =
       'تأكد من عنوان IP والمنفذ، وأن الهاتف متصل بنفس شبكة البوابة.';
+  static const String autoNoNetwork =
+      'لا يوجد اتصال بشبكة محلية. تأكّد من تفعيل الواي فاي ثم أعد المحاولة.';
+  static const String autoNotFound =
+      'لم يُعثر على خادم RuView في هذه الشبكة. جرّب إعادة المسح أو أدخل العنوان يدويًا.';
+  static const String autoFailed =
+      'تعذّر الاتصال التلقائي بأي نقطة في الشبكة. تحقّق من تشغيل بوابة RuView.';
   static const String justNow = 'الآن';
   static const String secondsAgo = 'ث';
   static const String minutesAgo = 'د';

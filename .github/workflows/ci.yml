@@ -27,7 +27,9 @@ jobs:
         run: flutter pub get
 
       - name: التحليل الساكن
-        run: flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+        run: |
+          set -o pipefail
+          flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/analyze.log
 
       - name: الاختبارات
         run: |
@@ -39,6 +41,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if [ -s /tmp/analyze.log ] && grep -qE 'error •|error:' /tmp/analyze.log; then
+            {
+              echo '### أخطاء التحليل الساكن'
+              echo '```'
+              grep -E 'error •|error:' /tmp/analyze.log | head -40
+              echo '```'
+            } > /tmp/analyze-body.md
+            if [ -n "${{ github.event.pull_request.number }}" ]; then
+              gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/analyze-body.md || true
+            fi
+          fi
           if [ ! -s /tmp/test.log ]; then echo "لا سجل اختبار"; exit 0; fi
           {
             echo '### اختبارات فاشلة'

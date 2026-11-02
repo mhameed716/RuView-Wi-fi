@@ -12,6 +12,7 @@ import '../app_scope.dart';
 import '../viewmodels/connection_view_model.dart';
 import '../viewmodels/sensing_view_model.dart';
 import '../widgets/app_background.dart';
+import '../widgets/auto_connect_card.dart';
 import '../widgets/connection_settings_card.dart';
 import '../widgets/neon_button.dart';
 import '../widgets/monitoring_dialogs.dart';
@@ -59,6 +60,8 @@ class DashboardScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 18),
                     ConnectionSettingsCard(viewModel: connection),
+                    const SizedBox(height: 14),
+                    AutoConnectCard(viewModel: connection),
                     const SizedBox(height: 14),
                     SecurityModeCard(
                       armed: sensing.intrusionArmed,

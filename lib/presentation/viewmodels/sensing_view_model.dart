@@ -18,6 +18,14 @@ import '../../data/services/emergency_dialer.dart';
 import '../../data/services/monitoring_settings_repository.dart';
 import '../../domain/monitoring/safety_monitor.dart';
 import '../../domain/monitoring/safety_state.dart';
+import '../../domain/twin/body_profile.dart';
+import '../../domain/twin/body_shape.dart';
+import '../../domain/twin/cloth_simulator.dart';
+import '../../domain/twin/room_model.dart';
+import '../../domain/twin/twin_engine.dart';
+import '../../domain/twin/twin_state.dart';
+import '../../domain/twin/vec3.dart';
+import '../../data/services/body_profile_repository.dart';
 import 'activity_rules.dart';
 
 /// ViewModel لوحة الرصد: يستقبل إطارات الاستشعار، ينعّم العلامات الحيوية،
@@ -29,12 +37,17 @@ class SensingViewModel extends ChangeNotifier {
     AlertDispatcher? alertDispatcher,
     EmergencyDialer? emergencyDialer,
     SafetyMonitor? safetyMonitor,
+    TwinEngine? twinEngine,
+    BodyProfileRepository? bodyProfileRepository,
   })  : _repository = repository,
         _monitoringSettings =
             monitoringSettings ?? MonitoringSettingsRepository(),
         _alerts = alertDispatcher ?? AlertDispatcher(),
         _dialer = emergencyDialer ?? EmergencyDialer(),
-        _safetyMonitor = safetyMonitor ?? SafetyMonitor() {
+        _safetyMonitor = safetyMonitor ?? SafetyMonitor(),
+        _twinEngine = twinEngine ?? TwinEngine(),
+        _bodyProfileRepository =
+            bodyProfileRepository ?? BodyProfileRepository() {
     _framesSubscription = _repository.frames.listen(_handleFrame);
     _connectionSubscription =
         _repository.connection.listen(_handleConnectionSnapshot);
@@ -49,6 +62,8 @@ class SensingViewModel extends ChangeNotifier {
   final AlertDispatcher _alerts;
   final EmergencyDialer _dialer;
   final SafetyMonitor _safetyMonitor;
+  final TwinEngine _twinEngine;
+  final BodyProfileRepository _bodyProfileRepository;
   StreamSubscription<SensingFrame>? _framesSubscription;
   StreamSubscription<ConnectionSnapshot>? _connectionSubscription;
   Timer? _staleTimer;
@@ -71,6 +86,10 @@ class SensingViewModel extends ChangeNotifier {
   bool _disposed = false;
   bool _safetyInitialized = false;
   String _emergencyNumber = MonitoringSettingsRepository.defaultEmergencyNumber;
+  TwinState _twin = TwinState.empty;
+  List<BodyProfile> _bodyProfiles = const <BodyProfile>[];
+  bool _twinInitialized = false;
+  DateTime _lastTwinFrameAt = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _lastAlertAt;
 
   // ── قراءات جاهزة للواجهة ──────────────────────────────────────────────
@@ -178,6 +197,86 @@ class SensingViewModel extends ChangeNotifier {
   /// هل تم تحميل الإعدادات المحفوظة (وضع الحراسة/بصمات المشية)؟
   bool get safetyReady => _safetyInitialized;
 
+  // ── التوأم الراديوي: جسم SMPL + غرفة RF-SLAM ──────────────────────────
+  /// اللقطة الكاملة للتوأم (جسم + قماش + غرفة + هوية).
+  TwinState get twin => _twin;
+
+  /// الشكل البارامتري الحالي (معاملات β).
+  BodyShape get bodyShape => _twin.shape;
+
+  /// خريطة الغرفة والأثاث المستنتجة من الانعكاسات الثابتة.
+  RoomModel get room => _twin.room;
+
+  /// نسبة المفاصل المرصودة فعليًا من CSI.
+  double get bodyCompletion => _twin.completionScore;
+
+  /// التوأم المحفوظ المطابق حاليًا (إن وُجد).
+  BodyMatch? get bodyMatch => _twin.match;
+
+  /// كل التوائم المسجّلة في المكان.
+  List<BodyProfile> get bodyProfiles => _bodyProfiles;
+
+  /// هل يوجد جسم مرصود الآن؟
+  bool get hasBodyTwin => _twin.hasBody;
+
+  /// جزيئات القماش (للرسم).
+  List<Vec3> get clothParticles => _twin.cloth;
+
+  /// وصف الهوية الحالية.
+  String get identityLabel => _twin.identityLabel;
+
+  /// هل حُمّلت التوائم المحفوظة؟
+  bool get twinReady => _twinInitialized;
+
+  /// إنشاء «توأم مسبق» للشخص المرصود الآن. يرجع `false` إن لا يوجد جسم.
+  Future<bool> enrollBodyProfile(String label) async {
+    final BodyProfile? profile = _twinEngine.enrollProfile(
+      label,
+      gait: safety.gaitMatch?.profile.vector,
+    );
+    if (profile == null) {
+      notifyListeners();
+      return false;
+    }
+
+    _bodyProfiles = List<BodyProfile>.unmodifiable(
+      <BodyProfile>[
+        ..._bodyProfiles.where((BodyProfile p) => p.id != profile.id),
+        profile,
+      ],
+    );
+    _twinEngine.setProfiles(_bodyProfiles);
+    await _bodyProfileRepository.save(_bodyProfiles);
+    _logLocal(
+      kind: ActivityKind.system,
+      title: 'تم إنشاء توأم جسدي: ${profile.label}',
+      detail: 'الطول التقديري ${(profile.shape.heightM * 100).round()} سم · '
+          '${profile.shape.buildLabel}',
+      tone: StatusTone.ok,
+    );
+    notifyListeners();
+    return true;
+  }
+
+  /// حذف توأم محفوظ.
+  Future<void> removeBodyProfile(String id) async {
+    final List<BodyProfile> next = _bodyProfiles
+        .where((BodyProfile profile) => profile.id != id)
+        .toList(growable: false);
+    if (next.length == _bodyProfiles.length) return;
+    _bodyProfiles = List<BodyProfile>.unmodifiable(next);
+    _twinEngine.setProfiles(_bodyProfiles);
+    await _bodyProfileRepository.save(_bodyProfiles);
+    notifyListeners();
+  }
+
+  /// البدء من جديد في مسح الغرفة (عند تغيّر الأثاث أو المكان).
+  void resetRoomScan() {
+    _twinEngine.resetRoom();
+    _twin = _twin.copyWith(room: RoomModel.empty);
+    notifyListeners();
+  }
+
   // ── منطق ──────────────────────────────────────────────────────────────
   void _handleFrame(SensingFrame frame) {
     if (_disposed) return;
@@ -208,6 +307,7 @@ class SensingViewModel extends ChangeNotifier {
 
     // الرصد المتقدم أولًا حتى يبقى «أول إطار» في أعلى السجل عند البدء.
     _processSafety(frame);
+    _processTwin(frame);
     _evaluateRules(frame);
     notifyListeners();
   }
@@ -257,6 +357,27 @@ class SensingViewModel extends ChangeNotifier {
     }
   }
 
+  /// تحديث «التوأم الراديوي»: جسم SMPL + إكمال + تنعيم + قماش + غرفة.
+  void _processTwin(SensingFrame frame) {
+    if (_disposed) return;
+    final DateTime now = frame.receivedAt;
+    final Duration elapsed = _lastTwinFrameAt.millisecondsSinceEpoch == 0
+        ? const Duration(milliseconds: 33)
+        : now.difference(_lastTwinFrameAt);
+    _lastTwinFrameAt = now;
+    try {
+      _twin = _twinEngine.update(
+        frame: frame,
+        posture: posture,
+        keypoints: poseKeypoints,
+        gait: safety.gaitMatch?.profile.vector,
+        elapsed: elapsed,
+      );
+    } catch (_) {
+      // فشل أي مرحلة من مراحل التوأم لا يجب أن يوقف الرصد الأساسي.
+    }
+  }
+
   /// تحميل الإعدادات المحفوظة (وضع الحراسة، رقم الطوارئ، بصمات المشية).
   Future<void> initialize() async {
     if (_safetyInitialized || _disposed) return;
@@ -268,6 +389,9 @@ class SensingViewModel extends ChangeNotifier {
           await _monitoringSettings.loadGaitProfiles();
       if (_disposed) return;
       _safetyMonitor.setGaitProfiles(profiles);
+      _bodyProfiles = await _bodyProfileRepository.load();
+      _twinEngine.setProfiles(_bodyProfiles);
+      _twinInitialized = true;
       if (wasArmed) {
         _safetyMonitor.setIntrusionArmed(true);
         _logLocal(
