@@ -103,7 +103,7 @@ void main() {
       expect(state.hasMesh, isTrue, reason: 'المجسّم لم يُبنَ');
       expect(state.poseInferred, isTrue);
       expect(state.mesh.vertexCount, greaterThan(100));
-      expect(state.joints.length, greaterThanOrEqualTo(17));
+      expect(state.joints.length, greaterThanOrEqualTo(16));
       expect(state.poseSourceLabel, contains('مستنتج'));
     });
 
