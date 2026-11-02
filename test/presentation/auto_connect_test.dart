@@ -128,7 +128,7 @@ void main() {
   });
 
   ConnectionViewModel build({
-    required NetworkContext context,
+    required NetworkContext Function() context,
     required _FakeScanner scanner,
     required _FakeWatcher watcher,
     Map<String, String> modes = const <String, String>{},
@@ -143,7 +143,7 @@ void main() {
       scanner: scanner,
       networkWatcher: watcher,
       testEnvironmentDetector: () => false,
-      networkDetector: () async => context,
+      networkDetector: () async => context(),
     );
     addTearDown(() async {
       model.dispose();
@@ -166,7 +166,7 @@ void main() {
     ]);
     final _FakeWatcher watcher = _FakeWatcher();
     final ConnectionViewModel model = build(
-      context: context,
+      context: () => context,
       scanner: scanner,
       watcher: watcher,
     );
@@ -197,8 +197,10 @@ void main() {
         isGateway: true,
       ),
     ]);
+    NetworkContext current =
+        NetworkContext.fromAddresses(<String>['192.168.1.42']);
     final ConnectionViewModel model = build(
-      context: NetworkContext.fromAddresses(<String>['192.168.1.42']),
+      context: () => current,
       scanner: scanner,
       watcher: watcher,
     );
@@ -211,6 +213,7 @@ void main() {
     expect(model.host, '192.168.1.1');
 
     // المستخدم انتقل إلى نقطة اتصال هاتف أندرويد 192.168.43.x.
+    current = NetworkContext.fromAddresses(<String>['192.168.43.129']);
     scanner.results = <LanCandidate>[
       const LanCandidate(
         host: '192.168.43.1',
@@ -219,7 +222,7 @@ void main() {
         isGateway: true,
       ),
     ];
-    watcher.notify(NetworkContext.fromAddresses(<String>['192.168.43.129']));
+    watcher.notify(current);
     await _waitFor(
       () =>
           model.discoveryPhase == DiscoveryPhase.connected &&
@@ -248,7 +251,7 @@ void main() {
       ),
     ]);
     final ConnectionViewModel model = build(
-      context: NetworkContext.fromAddresses(<String>['192.168.1.42']),
+      context: () => NetworkContext.fromAddresses(<String>['192.168.1.42']),
       scanner: scanner,
       watcher: _FakeWatcher(),
       modes: <String, String>{'192.168.1.50': 'silent'},
@@ -267,7 +270,7 @@ void main() {
   test('يُبلغ بصراحة عند عدم وجود خادم على الشبكة', () async {
     final _FakeScanner scanner = _FakeScanner(<LanCandidate>[]);
     final ConnectionViewModel model = build(
-      context: NetworkContext.fromAddresses(<String>['10.0.0.7']),
+      context: () => NetworkContext.fromAddresses(<String>['10.0.0.7']),
       scanner: scanner,
       watcher: _FakeWatcher(),
     );
@@ -285,7 +288,7 @@ void main() {
 
   test('بلا شبكة يذكر السبب بدل تعليق البحث', () async {
     final ConnectionViewModel model = build(
-      context: NetworkContext.offline,
+      context: () => NetworkContext.offline,
       scanner: _FakeScanner(<LanCandidate>[]),
       watcher: _FakeWatcher(),
     );
@@ -307,7 +310,7 @@ void main() {
       const LanCandidate(host: '192.168.1.1', port: 8765),
     ]);
     final ConnectionViewModel model = build(
-      context: NetworkContext.fromAddresses(<String>['192.168.1.42']),
+      context: () => NetworkContext.fromAddresses(<String>['192.168.1.42']),
       scanner: scanner,
       watcher: _FakeWatcher(),
     );
