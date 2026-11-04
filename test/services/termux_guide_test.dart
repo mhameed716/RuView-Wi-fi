@@ -15,7 +15,7 @@ void main() {
       final String script = TermuxGuide.script;
       expect(script, contains("cat > gateway.js <<'EOF'"));
       expect(script, contains('/ws/sensing'));
-      expect(script, contains('sec-websocket-accept'));
+      expect(script, contains('Sec-WebSocket-Accept'));
       expect(script, contains('101 Switching Protocols'));
       expect(script, contains('sensing_update'));
       expect(script, contains('node gateway.js 8080'));
