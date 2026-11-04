@@ -6,7 +6,10 @@ enum TransportKind {
   webSocket('WebSocket', '/ws/sensing'),
 
   /// استقبال حزم UDP مباشرة من عقد ESP32 (منفذ 5005 افتراضيًا).
-  udp('UDP', '');
+  udp('UDP', ''),
+
+  /// مصدر محاكاة يعمل داخل التطبيق بلا شبكة — للتجربة وإثبات سلامة الخط.
+  simulator('محاكاة', '');
 
   const TransportKind(this.label, this.defaultPath);
 
@@ -17,10 +20,21 @@ enum TransportKind {
 
   static TransportKind fromName(String? name) => switch (name) {
         'udp' => TransportKind.udp,
+        'simulator' => TransportKind.simulator,
         _ => TransportKind.webSocket,
       };
 
-  String get storageName => this == TransportKind.udp ? 'udp' : 'websocket';
+  String get storageName => switch (this) {
+        TransportKind.udp => 'udp',
+        TransportKind.simulator => 'simulator',
+        TransportKind.webSocket => 'websocket',
+      };
+
+  /// هل هذا مصدر داخلي (محاكاة) لا يحتاج شبكة؟
+  bool get isSimulator => this == TransportKind.simulator;
+
+  /// هل يحتاج عنوانًا ومنفذًا صالحين؟
+  bool get needsEndpoint => !isSimulator;
 }
 
 /// إعدادات الاتصال ببوابة RuView (تُحفظ محليًا على الجهاز).
@@ -85,7 +99,7 @@ class ConnectionSettings {
 
   /// رابط WebSocket النهائي مع رمز الوصول (إن وُجد) كـ query غير حساس.
   Uri? get webSocketUri {
-    if (!isValid) return null;
+    if (!isValid || !transport.needsEndpoint) return null;
     return Uri(
       scheme: secure ? 'wss' : 'ws',
       host: host,
@@ -119,10 +133,15 @@ class ConnectionSettings {
 
   bool get isValidPort => port >= 1 && port <= 65535;
 
-  bool get isValid => isValidHost && isValidPort;
+  /// صالح للاتصال: المحاكاة لا تحتاج مضيفًا، والبقية تحتاج عنوانًا ومنفذًا.
+  bool get isValid => transport.needsEndpoint
+      ? (isValidHost && isValidPort)
+      : true;
 
   /// وصف مختصر يُعرض في شرائح الحالة: `192.168.1.50:8765`.
-  String get endpointLabel => '${host.trim()}:$port';
+  String get endpointLabel => transport.isSimulator
+      ? 'مصدر داخلي (محاكاة)'
+      : '${host.trim()}:$port';
 
   Map<String, dynamic> toJson() => <String, dynamic>{
         'host': host,

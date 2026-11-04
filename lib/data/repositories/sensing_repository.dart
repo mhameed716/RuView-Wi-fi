@@ -4,6 +4,7 @@ import '../models/connection_settings.dart';
 import '../models/connection_status.dart';
 import '../models/json_read.dart';
 import '../models/sensing_frame.dart';
+import '../services/local_sensing_transport.dart';
 import '../services/sensing_transport.dart';
 import '../services/udp_sensing_transport.dart';
 import '../services/websocket_sensing_transport.dart';
@@ -77,6 +78,7 @@ class SensingRepository implements SensingDataSource {
   ) {
     return switch (settings.transport) {
       TransportKind.udp => UdpSensingTransport(),
+      TransportKind.simulator => LocalSensingTransport(),
       TransportKind.webSocket => WebSocketSensingTransport(),
     };
   }

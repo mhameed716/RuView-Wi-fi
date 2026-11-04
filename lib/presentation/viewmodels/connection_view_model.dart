@@ -115,6 +115,9 @@ class ConnectionViewModel extends ChangeNotifier {
   String get portText => _portText;
   TransportKind get transport => _transport;
   String get authToken => _authToken;
+
+  /// هل نعرض بيانات محاكاة داخلية بدل بوابة حقيقية؟
+  bool get isSimulated => _transport.isSimulator;
   bool get secure => _secure;
   String? get formMessage => _formMessage;
   bool get showValidation => _showValidation;
@@ -129,12 +132,14 @@ class ConnectionViewModel extends ChangeNotifier {
       );
 
   String? get hostError {
+    if (_transport.isSimulator) return null;
     final String value = _host.trim();
     if (value.isEmpty) return ArStrings.invalidHost;
     return draftSettings.isValidHost ? null : ArStrings.invalidHost;
   }
 
   String? get portError {
+    if (_transport.isSimulator) return null;
     final int? parsed = int.tryParse(_portText.trim());
     if (parsed == null) return ArStrings.invalidPort;
     if (parsed < 1 || parsed > 65535) return ArStrings.invalidPort;
@@ -163,6 +168,9 @@ class ConnectionViewModel extends ChangeNotifier {
 
   /// وصف حالة مختصر للعرض.
   String get statusLabel {
+    if (_status == ConnectionStatus.connected && _transport.isSimulator) {
+      return 'محاكاة نشطة';
+    }
     if (_status == ConnectionStatus.connected && _transport == TransportKind.udp) {
       return ArStrings.statusUdpListening;
     }
@@ -192,6 +200,12 @@ class ConnectionViewModel extends ChangeNotifier {
     _safeNotify(force: true);
 
     if (!_enableAutoDiscovery || _testEnvironmentDetector()) return;
+
+    // وضع المحاكاة محفوظ من جلسة سابقة: نستأنفه مباشرة بلا مسح للشبكة.
+    if (_transport.isSimulator) {
+      if (_autoConnect) unawaited(connect());
+      return;
+    }
 
     // الاتصال التلقائي: يعمل بمجرّد ارتباط الجهاز بأي شبكة.
     _networkWatcher.start(_handleNetworkUpdate);
@@ -263,6 +277,36 @@ class ConnectionViewModel extends ChangeNotifier {
   /// إعادة المسح يدويًا (مسح عميق).
   Future<void> rescan() => runAutoConnect(deep: true, force: true);
 
+  /// تشغيل الوضع التجريبي: مصدر محاكاة داخل التطبيق، بلا شبكة ولا بوابة.
+  ///
+  /// يضمن أن التطبيق يعرض بيانات كاملة (رادار، علامات حيوية، مجسّم) حتى حين
+  /// لا توجد بوابة RuView على الشبكة — مع إعلان صريح أنها بيانات مولّدة.
+  Future<void> startSimulator() async {
+    _autoRetryTimer?.cancel();
+    _autoAttempts = 0;
+    _autoMessage = null;
+    _phase = DiscoveryPhase.idle;
+    _transport = TransportKind.simulator;
+    _formMessage = null;
+    _showValidation = false;
+    await _settingsRepository.save(draftSettings);
+    await _repository.connect(draftSettings);
+    _safeNotify(force: true);
+  }
+
+  /// الخروج من وضع المحاكاة والعودة إلى WebSocket مع بوابة حقيقية.
+  Future<void> exitSimulator() async {
+    await _repository.disconnect();
+    _transport = TransportKind.webSocket;
+    if (_portText.trim() == '0' || _portText.trim().isEmpty) {
+      _portText = '8765';
+    }
+    _autoMessage = null;
+    _phase = DiscoveryPhase.idle;
+    await _settingsRepository.save(draftSettings);
+    _safeNotify(force: true);
+  }
+
   /// اتصال مباشر بمرشّح مكتشف.
   Future<void> connectToCandidate(LanCandidate candidate) async {
     _autoBusy = true;
@@ -286,6 +330,8 @@ class ConnectionViewModel extends ChangeNotifier {
   /// الاكتشاف + الاتصال التلقائي على أي شبكة.
   Future<void> runAutoConnect({bool deep = true, bool force = false}) async {
     if (_disposed || _autoBusy) return;
+    // لا معنى لمسح الشبكة في وضع المحاكاة (المصدر داخل التطبيق).
+    if (_transport.isSimulator) return;
     if (!_autoConnect && !force) return;
     if (isConnected && !force) return;
 
@@ -409,7 +455,7 @@ class ConnectionViewModel extends ChangeNotifier {
   }
 
   void _handleNetworkUpdate(NetworkContext context, bool changed) {
-    if (_disposed) return;
+    if (_disposed || _transport.isSimulator) return;
     final NetworkContext previous = _network;
     _network = context;
     if (!changed) return;
@@ -471,6 +517,13 @@ class ConnectionViewModel extends ChangeNotifier {
   void setTransport(TransportKind value) {
     if (_transport == value) return;
     _transport = value;
+    // المحاكاة لا تعتمد على منفذ: نحفظ آخر منفذ حقيقي ونعيده عند الخروج.
+    if (value.isSimulator) {
+      _formMessage = null;
+      _showValidation = false;
+      _safeNotify(force: true);
+      return;
+    }
     // منفذ UDP الافتراضي لعُقد ESP32 في RuView هو 5005.
     if (value == TransportKind.udp && _portText.trim() == '8765') {
       _portText = '5005';

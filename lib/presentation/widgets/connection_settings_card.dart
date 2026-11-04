@@ -262,7 +262,7 @@ class _ConnectionSettingsCardState extends State<ConnectionSettingsCard> {
   }
 }
 
-/// مبدّل بروتوكول النقل (WebSocket / UDP).
+/// مبدّل بروتوكول النقل (WebSocket / UDP / محاكاة داخلية).
 class _TransportSelector extends StatelessWidget {
   const _TransportSelector({required this.value, required this.onChanged});
 
@@ -303,6 +303,14 @@ class _TransportSelector extends StatelessWidget {
               ),
             ),
           ],
+        ),
+        const SizedBox(height: 8),
+        _TransportOption(
+          label: ArStrings.transportSimulator,
+          caption: ArStrings.transportSimulatorCaption,
+          icon: Icons.science_rounded,
+          selected: value == TransportKind.simulator,
+          onTap: () => onChanged(TransportKind.simulator),
         ),
       ],
     );

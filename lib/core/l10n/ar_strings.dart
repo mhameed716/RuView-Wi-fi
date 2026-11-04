@@ -6,6 +6,9 @@
 abstract final class ArStrings {
   // ── عام ────────────────────────────────────────────────────────────────
   static const String appName = 'RuView Wi-Fi';
+
+  /// رقم الإصدار المعروض في الواجهة (يُحدَّث مع `pubspec.yaml`).
+  static const String appVersion = '1.6.0';
   static const String appTagline = 'استشعار مكاني عبر الواي فاي — بدون كاميرات';
   static const String dashboardTitle = 'لوحة التحكم';
   static const String monitorTitle = 'لوحة الرصد';
@@ -26,6 +29,8 @@ abstract final class ArStrings {
   static const String transport = 'بروتوكول النقل';
   static const String transportWebSocket = 'WebSocket';
   static const String transportUdp = 'UDP';
+  static const String transportSimulator = 'محاكاة داخلية';
+  static const String transportSimulatorCaption = 'بلا شبكة — بيانات مولّدة';
   static const String advancedOptions = 'خيارات متقدمة';
   static const String authToken = 'رمز الوصول (اختياري)';
   static const String authTokenHint = 'RUVIEW_API_TOKEN إن كان مُفعّلًا';
@@ -117,6 +122,28 @@ abstract final class ArStrings {
       'لم يُعثر على خادم RuView في هذه الشبكة. جرّب إعادة المسح أو أدخل العنوان يدويًا.';
   static const String autoFailed =
       'تعذّر الاتصال التلقائي بأي نقطة في الشبكة. تحقّق من تشغيل بوابة RuView.';
+  // ── وضع المحاكاة وإرشاد البوابة ────────────────────────────────────────
+  static const String simulatorBadge = 'محاكاة نشطة';
+  static const String simulatorBanner =
+      'وضع المحاكاة: كل الأرقام والرسومات أدناه مولّدة داخل التطبيق — ليست '
+      'قياسًا لموجات الواي فاي. أوقف المحاكاة واتصل ببوابة حقيقية للبيانات الفعلية.';
+  static const String simulatorStart = 'تشغيل الوضع التجريبي (محاكاة)';
+  static const String simulatorStop = 'إيقاف المحاكاة';
+  static const String gatewayHelpTitle = 'لا توجد بوابة RuView في شبكتك';
+  static const String gatewayHelpBody =
+      'التطبيق يعرض ما تبثّه بوابة RuView. لا بوابة = لا بيانات، وهذا سبب '
+      'الفراغ الذي تراه. أمامك حلّان: الوضع التجريبي فورًا، أو بوابة حقيقية على '
+      'هاتفك بأربع خطوات أدناه.';
+  static const String termuxTitle = 'شغّل بوابة على هاتفك (Termux)';
+  static const String termuxSubtitle = 'أربع خطوات — الأوامر جاهزة للنسخ واللصق';
+  static const String copyCommands = 'نسخ كل الأوامر';
+  static const String copyStep = 'نسخ';
+  static const String commandsCopied = 'تم نسخ الأوامر — الصقها في Termux';
+  static const String showSteps = 'عرض الخطوات';
+  static const String hideSteps = 'إخفاء الخطوات';
+  static const String termuxAfterRunHint =
+      'بعد ظهور رسالة «بوابة RuView تعمل»: اختر WebSocket، والعنوان '
+      '127.0.0.1، والمنفذ 8080، ثم اضغط اتصال.';
   static const String justNow = 'الآن';
   static const String secondsAgo = 'ث';
   static const String minutesAgo = 'د';

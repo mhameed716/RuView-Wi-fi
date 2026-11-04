@@ -25,6 +25,7 @@ import '../widgets/posture_status_card.dart';
 import '../widgets/presence_radar.dart';
 import '../widgets/rf_twin_card.dart';
 import '../widgets/room_reconstruction_panel.dart';
+import '../widgets/simulation_banner.dart';
 import '../widgets/sleep_vitals_panel.dart';
 import '../widgets/status_pill.dart';
 import '../widgets/vitals_panel.dart';
@@ -71,6 +72,13 @@ class MonitorScreen extends StatelessWidget {
                       connection: connection,
                       armed: sensing.intrusionArmed,
                     ),
+                    if (connection.isSimulated) ...<Widget>[
+                      const SizedBox(height: 10),
+                      SimulationBanner(
+                        compact: true,
+                        onStop: connection.exitSimulator,
+                      ),
+                    ],
                     if (intrusionAlert != null) ...<Widget>[
                       const SizedBox(height: 10),
                       IntrusionStrip(
@@ -80,7 +88,10 @@ class MonitorScreen extends StatelessWidget {
                     ],
                     const SizedBox(height: 16),
                     if (!connection.isConnected) ...<Widget>[
-                      _OfflineBanner(onRetry: connection.connect),
+                      _OfflineBanner(
+                        onRetry: connection.connect,
+                        onSimulate: connection.startSimulator,
+                      ),
                       const SizedBox(height: 14),
                     ],
                     if (connection.isDataStale) ...<Widget>[
@@ -301,9 +312,10 @@ class _MonitorHeader extends StatelessWidget {
 }
 
 class _OfflineBanner extends StatelessWidget {
-  const _OfflineBanner({required this.onRetry});
+  const _OfflineBanner({required this.onRetry, required this.onSimulate});
 
   final Future<bool> Function() onRetry;
+  final Future<void> Function() onSimulate;
 
   @override
   Widget build(BuildContext context) {
@@ -337,6 +349,15 @@ class _OfflineBanner extends StatelessWidget {
             icon: Icons.wifi_tethering_rounded,
             height: 44,
             onPressed: () => unawaitedFuture(onRetry()),
+          ),
+          const SizedBox(height: 8),
+          NeonButton(
+            key: const ValueKey<String>('monitor-simulator-button'),
+            label: ArStrings.simulatorStart,
+            icon: Icons.play_circle_outline_rounded,
+            variant: NeonButtonVariant.outlined,
+            height: 44,
+            onPressed: () => unawaited(onSimulate()),
           ),
         ],
       ),

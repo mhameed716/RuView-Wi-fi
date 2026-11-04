@@ -251,10 +251,12 @@ class AutoConnectCard extends StatelessWidget {
           const SizedBox(height: 10),
           NeonButton(
             key: const ValueKey<String>('rescan-button'),
-            label: viewModel.isDiscovering ? 'جارٍ المسح…' : 'إعادة مسح الشبكة',
+            label: viewModel.isSimulated
+                ? 'المحاكاة تعمل — لا مسح للشبكة'
+                : (viewModel.isDiscovering ? 'جارٍ المسح…' : 'إعادة مسح الشبكة'),
             icon: Icons.refresh_rounded,
             expand: true,
-            onPressed: viewModel.isDiscovering
+            onPressed: viewModel.isDiscovering || viewModel.isSimulated
                 ? null
                 : () => unawaited(viewModel.rescan()),
           ),

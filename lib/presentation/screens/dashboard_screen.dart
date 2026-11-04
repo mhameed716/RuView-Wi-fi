@@ -14,12 +14,14 @@ import '../viewmodels/sensing_view_model.dart';
 import '../widgets/app_background.dart';
 import '../widgets/auto_connect_card.dart';
 import '../widgets/connection_settings_card.dart';
+import '../widgets/gateway_help_card.dart';
 import '../widgets/neon_button.dart';
 import '../widgets/monitoring_dialogs.dart';
 import '../widgets/neon_card.dart';
 import '../widgets/posture_status_card.dart';
 import '../widgets/security_mode_card.dart';
 import '../widgets/status_pill.dart';
+import '../widgets/simulation_banner.dart';
 import '../widgets/summary_tile.dart';
 
 /// الشاشة الأولى: لوحة التحكم وإعدادات الاتصال وملخّص سريع.
@@ -59,9 +61,19 @@ class DashboardScreen extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 18),
+                    if (connection.isSimulated) ...<Widget>[
+                      SimulationBanner(
+                        onStop: connection.exitSimulator,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     ConnectionSettingsCard(viewModel: connection),
                     const SizedBox(height: 14),
                     AutoConnectCard(viewModel: connection),
+                    if (!connection.isConnected && !connection.isBusy) ...<Widget>[
+                      const SizedBox(height: 14),
+                      GatewayHelpCard(viewModel: connection),
+                    ],
                     const SizedBox(height: 14),
                     SecurityModeCard(
                       armed: sensing.intrusionArmed,
@@ -356,9 +368,9 @@ class _PrivacyFooter extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 6),
-        const Text(
-          'RuView Wi-Fi · الإصدار 1.0.0',
-          style: TextStyle(fontSize: 9.5, color: AppColors.textMuted),
+        Text(
+          '${ArStrings.appName} · الإصدار ${ArStrings.appVersion}',
+          style: const TextStyle(fontSize: 9.5, color: AppColors.textMuted),
         ),
       ],
     );
