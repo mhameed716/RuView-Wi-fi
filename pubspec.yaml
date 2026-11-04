@@ -1,0 +1,39 @@
+name: ruview_wifi
+description: "RuView Wi-Fi — واجهة أندرويد عربية لمراقبة استشعار الواي فاي (حضور، حركة، علامات حيوية) من بوابة RuView المحلية بدون كاميرات."
+publish_to: "none"
+
+# نسخة التطبيق: <major>.<minor>.<patch>+<build>
+version: 1.6.0+7
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # تخزين إعدادات الاتصال محليًا (IP / المنفذ / رمز الوصول).
+  shared_preferences: ^2.3.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # لإضافة خط عربي مخصص (مثال: Cairo أو Tajawal) ضع الملفات في assets/fonts
+  # ثم أزل التعليق عن الكتلة التالية:
+  #
+  # fonts:
+  #   - family: Cairo
+  #     fonts:
+  #       - asset: assets/fonts/Cairo-Regular.ttf
+  #       - asset: assets/fonts/Cairo-SemiBold.ttf
+  #         weight: 600
+  #       - asset: assets/fonts/Cairo-Bold.ttf
+  #         weight: 700

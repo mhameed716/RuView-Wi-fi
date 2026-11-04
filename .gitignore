@@ -1,0 +1,38 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+*.iml
+.idea/
+.metadata
+coverage/
+doc/api/
+
+# Android
+android/local.properties
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/key.properties
+*.jks
+*.keystore
+android/captures/
+
+# أدوات / بيئة محلية
+__pycache__/
+*.pyc
+node_modules/
+.DS_Store
+*.log
+/tmp/
+
+# نسخة RuView الرسمية الكاملة (تُسحب عند الحاجة — انظر vendor/ruview-official/PROVENANCE.md)
+vendor/ruview-full/
+
+# مساحة عمل محلية مؤقتة (غير مرتبطة بالتطبيق)
+/.arena/

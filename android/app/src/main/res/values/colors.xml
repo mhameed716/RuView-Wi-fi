@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- نفس خلفية التطبيق الداكنة لمنع وميض أبيض عند الإقلاع -->
+    <color name="launch_background_color">#05070D</color>
+    <color name="status_bar_color">#05070D</color>
+</resources>

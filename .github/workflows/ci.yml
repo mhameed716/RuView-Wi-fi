@@ -1,0 +1,175 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  flutter:
+    name: تحليل واختبار Flutter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: تثبيت الحزم
+        run: flutter pub get
+
+      - name: التحليل الساكن
+        run: |
+          set -o pipefail
+          flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings 2>&1 | tee /tmp/analyze.log
+
+      - name: الاختبارات
+        run: |
+          set -o pipefail
+          flutter test --no-pub --reporter expanded 2>&1 | tee /tmp/test.log
+
+      - name: نشر تفاصيل الفشل (تشخيص)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ -s /tmp/analyze.log ] && grep -qE 'error •|error:' /tmp/analyze.log; then
+            {
+              echo '### أخطاء التحليل الساكن'
+              echo '```'
+              grep -E 'error •|error:' /tmp/analyze.log | head -40
+              echo '```'
+            } > /tmp/analyze-body.md
+            if [ -n "${{ github.event.pull_request.number }}" ]; then
+              gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/analyze-body.md || true
+            fi
+          fi
+          if [ ! -s /tmp/test.log ]; then echo "لا سجل اختبار"; exit 0; fi
+          {
+            echo '### اختبارات فاشلة'
+            echo '```'
+            grep -E '\[E\]$' /tmp/test.log | sed 's#/home/runner/work/RuView-Wi-fi/RuView-Wi-fi/##' | head -20
+            echo '```'
+            echo '### تفاصيل'
+            echo '```'
+            grep -B60 -A8 '\[E\]$' /tmp/test.log | head -200
+            echo '```'
+          } > /tmp/body.md
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/body.md || true
+          fi
+
+      - name: تدقيق بنية Dart
+        run: python3 tools/check_dart_imports.py
+
+  build-apk:
+    name: بناء APK (Release)
+    runs-on: ubuntu-latest
+    needs: flutter
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.24.5
+          cache: true
+
+      - name: تثبيت الحزم
+        run: flutter pub get
+
+      - name: بناء APK للإصدار
+        run: |
+          set -o pipefail
+          flutter build apk --release 2>&1 | tee /tmp/build.log
+          ls -lh build/app/outputs/flutter-apk/
+
+      - name: نشر تفاصيل فشل البناء (تشخيص)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -s /tmp/build.log ]; then echo "لا سجل بناء"; exit 0; fi
+          {
+            echo '### فشل بناء APK'
+            echo '```'
+            grep -iE 'error|FAILURE|Exception|not found' /tmp/build.log | head -40
+            echo '```'
+            echo '### آخر السجل'
+            echo '```'
+            tail -c 3000 /tmp/build.log
+            echo '```'
+          } > /tmp/build-body.md
+          if [ -n "${{ github.event.pull_request.number }}" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/build-body.md || true
+          fi
+
+      - name: رفع APK كأثر للبناء
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruview-wifi-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: إرفاق APK بصفحة الإصدار (وسم v*)
+        if: success() && startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            build/app/outputs/flutter-apk/app-release.apk \
+            --title "RuView Wi-Fi ${GITHUB_REF_NAME}" \
+            --notes "بناء تلقائي من GitHub Actions — تطبيق أندرويد للاستشعار عبر Wi-Fi." \
+          || gh release upload "${GITHUB_REF_NAME}" \
+            build/app/outputs/flutter-apk/app-release.apk --clobber
+
+  tooling:
+    name: فحص أدوات Node
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: فحص الصياغة
+        run: |
+          node --check preview/app.js
+          node --check preview/twin.js
+          node --check tools/mock_ruview_server.mjs
+          node --check tools/router_sim.mjs
+          node --check tools/lan_scan_mirror.mjs
+          node --check tools/router_lab.mjs
+
+      - name: مختبر الراوتر ونقطة الاتصال
+        run: node tools/router_lab.mjs
+
+      - name: توليد إطار تجريبي والتحقق من الحقول
+        run: |
+          node tools/mock_ruview_server.mjs --once > /tmp/frame.json
+          node -e "
+            const f = require('/tmp/frame.json');
+            const required = ['type','timestamp','nodes','features','classification','signal_field'];
+            for (const key of required) {
+              if (!(key in f)) { throw new Error('حقل ناقص: ' + key); }
+            }
+            if (f.type !== 'sensing_update') throw new Error('نوع الرسالة غير صحيح');
+            if (!Array.isArray(f.nodes) || f.nodes.length === 0) throw new Error('لا عقد في الإطار');
+            console.log('إطار صالح — عقد:', f.nodes.length, '| تصنيف:', f.classification.motion_level);
+          "
