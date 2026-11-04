@@ -192,13 +192,16 @@ class SensingRepository implements SensingDataSource {
   }
 
   Future<void> _detachTransport({required bool notify}) async {
-    await _subscription?.cancel();
+    final StreamSubscription<TransportEvent>? subscription = _subscription;
     _subscription = null;
     final SensingTransport? transport = _transport;
     _transport = null;
-    if (transport != null) {
-      await transport.dispose();
-    }
+    // نبدأ التحرير فورًا (يوقف مؤقّتات النقل ويسدّ مقابسه) ثم ننتظر الاثنين:
+    // انتظار إلغاء الاشتراك أولًا كان يُبقي المؤقّتات حيّة لحظات إضافية.
+    final Future<void> disposal =
+        transport == null ? Future<void>.value() : transport.dispose();
+    await subscription?.cancel();
+    await disposal;
     if (notify) {
       _emit(const ConnectionSnapshot(status: ConnectionStatus.disconnected));
     }

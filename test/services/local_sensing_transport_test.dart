@@ -99,10 +99,19 @@ void main() {
       await transport.disconnect();
       expect(transport.isActive, isFalse);
 
-      final int framesAfterDisconnect = kinds.length;
-      await Future<void>.delayed(const Duration(milliseconds: 120));
-      expect(kinds.length, framesAfterDisconnect);
-      expect(kinds.contains(TransportEventKind.disconnected), isTrue);
+      // البثّ غير متزامن: ننتظر وصول كل الأحداث ثم نتحقق أنه لا إطار بعد
+      // إعلان الانفصال (لا نعتمد على طول القائمة لحظةً بلحظة).
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      final int stopIndex = kinds.indexOf(TransportEventKind.disconnected);
+      expect(stopIndex, isNot(-1));
+      expect(
+        kinds
+            .sublist(stopIndex + 1)
+            .where((TransportEventKind kind) =>
+                kind == TransportEventKind.frame)
+            .isEmpty,
+        isTrue,
+      );
 
       await subscription.cancel();
       await transport.dispose();

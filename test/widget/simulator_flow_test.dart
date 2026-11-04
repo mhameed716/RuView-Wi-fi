@@ -32,6 +32,17 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
   }
 
+  /// إيقاف المحاكاة قبل إغلاق الشجرة حتى لا يبقى مؤقّت دوري معلّق.
+  Future<void> stopSimulator(WidgetTester tester) async {
+    final Finder stop = find.text('إيقاف المحاكاة');
+    if (stop.evaluate().isEmpty) return;
+    await tester.ensureVisible(stop.first);
+    await tester.pump();
+    await tester.tap(stop.first);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+
   testWidgets('زر الوضع التجريبي يملأ الواجهة ويعلن أنها محاكاة',
       (WidgetTester tester) async {
     await pumpApp(tester);
@@ -52,6 +63,7 @@ void main() {
     // بيانات فعلية وصلت: الحضور ظاهر في الملخص.
     expect(find.text('شخص مرصود'), findsWidgets);
 
+    await stopSimulator(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
@@ -81,6 +93,7 @@ void main() {
       findsWidgets,
     );
 
+    await stopSimulator(tester);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(seconds: 1));
   });
