@@ -147,6 +147,15 @@ class _GatewayHelpCardState extends State<GatewayHelpCard> {
                 color: AppColors.textMuted,
               ),
             ),
+            const SizedBox(height: 6),
+            const Text(
+              ArStrings.termuxSyntheticNote,
+              style: TextStyle(
+                fontSize: 10.5,
+                height: 1.6,
+                color: AppColors.warning,
+              ),
+            ),
           ],
         ],
       ),

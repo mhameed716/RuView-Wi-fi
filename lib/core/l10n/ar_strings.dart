@@ -141,6 +141,9 @@ abstract final class ArStrings {
   static const String commandsCopied = 'تم نسخ الأوامر — الصقها في Termux';
   static const String showSteps = 'عرض الخطوات';
   static const String hideSteps = 'إخفاء الخطوات';
+  static const String termuxSyntheticNote =
+      'تنبيه: البوابة أعلاه عملية حقيقية تخدم بروتوكول RuView، لكن إطاراتها '
+      'مولّدة تجريبيًا. الاستشعار الحقيقي يحتاج عُقد ESP32 ترسل CSI على الشبكة.';
   static const String termuxAfterRunHint =
       'بعد ظهور رسالة «بوابة RuView تعمل»: اختر WebSocket، والعنوان '
       '127.0.0.1، والمنفذ 8080، ثم اضغط اتصال.';
