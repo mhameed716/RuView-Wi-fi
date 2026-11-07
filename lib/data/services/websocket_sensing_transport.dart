@@ -479,6 +479,30 @@ class WebSocketSensingTransport implements SensingTransport {
         'هذا ليس منفذ بوابة RuView (8765 / 3000 / 3001)';
   }
 
+  /// ترجمة أخطاء نظام التشغيل الشائعة إلى عربية صريحة + خطوة تالية.
+  ///
+  /// سبب الإصلاح: كانت الرسالة تظهر مختلطة مثل «تعذّر الوصول إلى الخادم —
+  /// Connection refused»، وهي لا تخبر المستخدم أن المنفذ مغلق أصلًا.
+  static String _humanizeSocket(String code) {
+    final String lower = code.toLowerCase();
+    if (lower.contains('refused')) {
+      return 'المنفذ مغلق على هذا الجهاز: لا يوجد أي خادم يستمع عليه. '
+          'شغّل بوابة RuView أو استخدم الوضع التجريبي';
+    }
+    if (lower.contains('timed out') || lower.contains('timeout')) {
+      return 'لا ردّ من الجهاز (مهلة) — قد يمنع جدار الحماية هذا المنفذ';
+    }
+    if (lower.contains('unreachable') || lower.contains('no route')) {
+      return 'الجهاز غير قابل للوصول — تأكّد أنك على نفس الشبكة';
+    }
+    if (lower.contains('reset') || lower.contains('abort')) {
+      return 'قُطع الاتصال فورًا — الخادم يرفض هذا المنفذ أو يحجبه وسيط';
+    }
+    return code.isEmpty
+        ? 'تعذّر الوصول إلى الخادم، تحقّق من الشبكة'
+        : 'تعذّر الوصول إلى الخادم — $code';
+  }
+
   /// تحويل أخطاء المقابس إلى رسائل عربية قابلة للتنفيذ.
   static String _humanize(Object? error) {
     if (error == null) return 'تعذّر فتح الاتصال بالخادم';
@@ -486,11 +510,9 @@ class WebSocketSensingTransport implements SensingTransport {
       return 'انتهت مهلة الاتصال بالخادم';
     }
     if (error is SocketException) {
-      final String? code = error.osError?.message;
-      if (code != null && code.isNotEmpty) {
-        return 'تعذّر الوصول إلى الخادم — $code';
-      }
-      return 'تعذّر الوصول إلى الخادم، تحقّق من الشبكة';
+      final String code =
+          (error.osError?.message ?? error.message).trim();
+      return _humanizeSocket(code);
     }
     if (error is WebSocketException) {
       final String message = error.message;

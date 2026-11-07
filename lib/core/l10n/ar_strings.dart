@@ -8,7 +8,7 @@ abstract final class ArStrings {
   static const String appName = 'RuView Wi-Fi';
 
   /// رقم الإصدار المعروض في الواجهة (يُحدَّث مع `pubspec.yaml`).
-  static const String appVersion = '1.6.0';
+  static const String appVersion = '1.6.1';
   static const String appTagline = 'استشعار مكاني عبر الواي فاي — بدون كاميرات';
   static const String dashboardTitle = 'لوحة التحكم';
   static const String monitorTitle = 'لوحة الرصد';

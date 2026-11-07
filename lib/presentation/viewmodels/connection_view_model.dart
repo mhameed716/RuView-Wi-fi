@@ -224,6 +224,19 @@ class ConnectionViewModel extends ChangeNotifier {
   /// المرشّحون المكتشفون على الشبكة (مرتّبون بالأفضلية).
   List<LanCandidate> get candidates => _candidates;
 
+  /// البوابات الفعلية فقط (بصمة RuView أو تحقّق WebSocket كامل).
+  List<LanCandidate> get gatewayCandidates => _candidates
+      .where((LanCandidate candidate) => candidate.isGatewayCandidate)
+      .toList(growable: false);
+
+  /// منافذ مفتوحة لكنها ليست بوابة RuView (تُعرض للتشخيص فقط).
+  List<LanCandidate> get openPortCandidates => _candidates
+      .where((LanCandidate candidate) => !candidate.isGatewayCandidate)
+      .toList(growable: false);
+
+  /// تقرير آخر مسح فعلي: كم عنوانًا ومنفذًا فُحص فعلًا.
+  LanScanReport? get scanReport => _scanner.lastReport;
+
   /// سياق الشبكة الحالي (العنوان المحلي والبوابة).
   NetworkContext get network => _network;
 
@@ -249,7 +262,9 @@ class ConnectionViewModel extends ChangeNotifier {
       case DiscoveryPhase.searching:
         return 'جارٍ البحث في الشبكة…';
       case DiscoveryPhase.found:
-        return 'عُثر على ${_candidates.length} مرشّح';
+        final int gateways = gatewayCandidates.length;
+        if (gateways > 0) return 'عُثر على $gateways بوابة RuView';
+        return 'لا بوابة RuView (${openPortCandidates.length} منفذ مفتوح فقط)';
       case DiscoveryPhase.connecting:
         return 'جارٍ تجربة الاتصال…';
       case DiscoveryPhase.connected:
@@ -365,13 +380,20 @@ class ConnectionViewModel extends ChangeNotifier {
 
       if (found.isEmpty) {
         _phase = DiscoveryPhase.notFound;
-        _autoMessage = ArStrings.autoNotFound;
+        _autoMessage =
+            _scanner.lastReport?.arabicSummary ?? ArStrings.autoNotFound;
         return;
       }
 
       _phase = DiscoveryPhase.found;
       _safeNotify(force: true);
-      await _tryCandidates(found.take(4).toList(growable: false));
+      final List<LanCandidate> preferred = <LanCandidate>[
+        ...found.where((LanCandidate c) => c.isGatewayCandidate),
+        ...found
+            .where((LanCandidate c) => !c.isGatewayCandidate)
+            .take(2),
+      ];
+      await _tryCandidates(preferred.take(4).toList(growable: false));
     } catch (_) {
       _phase = DiscoveryPhase.failed;
       _autoMessage = ArStrings.autoFailed;
@@ -408,8 +430,9 @@ class ConnectionViewModel extends ChangeNotifier {
     }
     _phase = DiscoveryPhase.failed;
     final String? reason = _errorMessage;
+    final String summary = _scanner.lastReport?.arabicSummary ?? '';
     _autoMessage = reason == null || reason.isEmpty
-        ? ArStrings.autoFailed
+        ? '${ArStrings.autoFailed}${summary.isEmpty ? '' : ' · $summary'}'
         : '${ArStrings.autoFailed} — $reason';
   }
 

@@ -125,6 +125,7 @@ class LanCandidate {
     this.transport = TransportKind.webSocket,
     this.latencyMs = 0,
     this.looksLikeRuView = false,
+    this.verified = false,
     this.isGateway = false,
     this.isSaved = false,
     this.source = 'مسح',
@@ -148,6 +149,7 @@ class LanCandidate {
       ),
       latencyMs: readInt('latency_ms', 0),
       looksLikeRuView: json['ruview'] == true,
+      verified: json['verified'] == true,
       isGateway: json['gateway'] == true,
       isSaved: json['saved'] == true,
       source: json['source'] is String ? json['source'] as String : 'مسح',
@@ -161,8 +163,13 @@ class LanCandidate {
   /// زمن الاستجابة بالمللي ثانية (أقل = أفضل).
   final int latencyMs;
 
-  /// هل استجاب كخادم RuView فعلًا (HTTP/WebSocket)؟
+  /// هل استجاب كخادم RuView فعلًا (بصمة HTTP)؟
   final bool looksLikeRuView;
+
+  /// إثبات قاطع: مصافحة WebSocket ناجحة على مسار الاستشعار + وصول إطار
+  /// `sensing_update` صالح من هذا المنفذ. هذا هو الفحص «الحقيقي» الذي لا
+  /// يعتمد على مجرّد فتح المنفذ.
+  final bool verified;
 
   final bool isGateway;
   final bool isSaved;
@@ -173,6 +180,7 @@ class LanCandidate {
   /// درجة الثقة بالمرشّح — الأعلى يُجرَّب أولًا.
   int get score {
     int value = 0;
+    if (verified) value += 200;
     if (looksLikeRuView) value += 100;
     if (isSaved) value += 45;
     if (isGateway) value += 18;
@@ -185,11 +193,27 @@ class LanCandidate {
   String get label => '$host:$port';
 
   String get sourceLabel {
+    if (verified) return 'بوابة RuView مُتحقَّق منها';
     if (looksLikeRuView) return 'خادم RuView';
-    if (isSaved) return 'آخر اتصال ناجح';
+    if (isSaved) return 'محفوظ سابقًا';
     if (isGateway) return 'بوابة الشبكة';
-    return source;
+    return 'منفذ مفتوح — ليست RuView';
   }
+
+  /// هل يستحق أن يُجرَّب تلقائيًا كبوابة استشعار؟
+  bool get isGatewayCandidate => verified || looksLikeRuView;
+
+  LanCandidate copyWith({bool? verified}) => LanCandidate(
+        host: host,
+        port: port,
+        transport: transport,
+        latencyMs: latencyMs,
+        looksLikeRuView: looksLikeRuView,
+        verified: verified ?? this.verified,
+        isGateway: isGateway,
+        isSaved: isSaved,
+        source: source,
+      );
 
   ConnectionSettings toSettings({
     String authToken = '',
@@ -209,6 +233,7 @@ class LanCandidate {
         'transport': transport.storageName,
         'latency_ms': latencyMs,
         'ruview': looksLikeRuView,
+        'verified': verified,
         'gateway': isGateway,
         'saved': isSaved,
         'source': source,
@@ -216,6 +241,61 @@ class LanCandidate {
 
   @override
   String toString() => 'LanCandidate($label, score=$score)';
+}
+
+/// تقرير مسح فعلي قابل للعرض والمشاركة — أرقام حقيقية لا تقديرات.
+///
+/// الغرض: يرى المستخدم بالضبط ماذا فُحص، فلا يبقى «مسح» مجهولًا ولا تظهر
+/// بوابة وهمية.
+class LanScanReport {
+  const LanScanReport({
+    required this.networkLabel,
+    required this.hostsScanned,
+    required this.portsScanned,
+    required this.probes,
+    required this.openPorts,
+    required this.gateways,
+    required this.durationMs,
+    required this.deep,
+  });
+
+  final String networkLabel;
+  final int hostsScanned;
+  final int portsScanned;
+
+  /// عدد محاولات الاتصال الفعلية (مضيف × منفذ).
+  final int probes;
+
+  /// منافذ استجابت (TCP) لكنها ليست بوابة RuView.
+  final int openPorts;
+
+  /// بوابات RuView (بصمة أو تحقّق WebSocket كامل).
+  final int gateways;
+
+  final int durationMs;
+  final bool deep;
+
+  String get arabicSummary {
+    final String scope =
+        deep ? 'مسح عميق لكل الشبكة' : 'مسح سريع (عناوين مهمة فقط)';
+    final String gatewaysText = gateways == 0
+        ? 'لا بوابة RuView'
+        : '$gateways بوابة RuView';
+    return '$scope · ${hostsScanned} عنوانًا × $portsScanned منافذ = $probes '
+            'محاولة · $openPorts منفذ مفتوح · $gatewaysText · '
+            '${(durationMs / 1000).toStringAsFixed(1)} ث';
+  }
+
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'network': networkLabel,
+        'hosts': hostsScanned,
+        'ports': portsScanned,
+        'probes': probes,
+        'open_ports': openPorts,
+        'gateways': gateways,
+        'duration_ms': durationMs,
+        'deep': deep,
+      };
 }
 
 /// ماسح الشبكة المحلية: يجعل التطبيق يعمل على **أي راوتر أو نقطة اتصال**.
@@ -236,6 +316,8 @@ class LanScanner {
     this.maxScanDuration = const Duration(seconds: 9),
     this.discoveryPort = 5005,
     this.useBroadcast = true,
+    this.maxVerifications = 6,
+    this.verifyTimeout = const Duration(milliseconds: 1500),
   });
 
   /// منافذ RuView الشائعة: 8765 (WS للاستشعار)، 3000/3001 (REST/WS الرسمي)،
@@ -250,6 +332,15 @@ class LanScanner {
 
   /// تفعيل بثّ UDP للاكتشاف.
   final bool useBroadcast;
+
+  /// أقصى عدد مرشّحين يُتحقَّق منهم بمصافحة WebSocket فعلية في المسح الواحد.
+  final int maxVerifications;
+
+  /// مهلة التحقق لكل مرشّح (مصافحة + أول إطار).
+  final Duration verifyTimeout;
+
+  /// آخر تقرير مسح فعلي (لل عرض والمشاركة).
+  LanScanReport? lastReport;
 
   /// أسماء مضيفين قد تُعرّف البوابة نفسها بها (تُجرَّب بأولوية منخفضة).
   static const List<String> hostnames = <String>[
@@ -369,6 +460,94 @@ class LanScanner {
     }
   }
 
+  /// إثبات قاطع: هل هذا العنوان منفذ استشعار RuView فعلًا؟
+  ///
+  /// نفتح WebSocket حقيقيًا على `/ws/sensing` (ثم مسار الوضعية كبديل)،
+  /// وننتظر أول رسالة؛ نقبلها فقط إن كانت إطار `sensing_update` صالحًا
+  /// (يحمل `classification` أو `features` أو `nodes` أو نوع الإطار).
+  /// منفذ مفتوح لا يجتاز هذا الفحص = ليس بوابة RuView.
+  Future<bool> verifySensing(
+    String host,
+    int port, {
+    Duration? timeout,
+  }) async {
+    final Duration budget = timeout ?? verifyTimeout;
+    for (final String path in const <String>[
+      '/ws/sensing',
+      '/api/v1/stream/pose',
+    ]) {
+      WebSocket? socket;
+      try {
+        socket = await WebSocket.connect('ws://$host:$port$path')
+            .timeout(budget);
+        final Object? message = await socket.first.timeout(budget);
+        if (isSensingPayload(message)) return true;
+      } catch (_) {
+        // فشل المصافحة أو لا إطار: نجرّب المسار البديل.
+      } finally {
+        final WebSocket? open = socket;
+        if (open != null) {
+          try {
+            await open.close();
+          } catch (_) {
+            // تجاهل أخطاء الإغلاق.
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// هل الرسالة إطار استشعار RuView صالح؟ (دالة نقية تُختبر مباشرة)
+  static bool isSensingPayload(Object? message) {
+    final String text;
+    if (message is String) {
+      text = message;
+    } else if (message is List<int>) {
+      text = utf8.decode(message, allowMalformed: true);
+    } else {
+      return false;
+    }
+    final String lower = text.trimLeft().toLowerCase();
+    if (lower.isEmpty || !lower.startsWith('{')) return false;
+    return lower.contains('sensing_update') ||
+        lower.contains('"classification"') ||
+        lower.contains('"features"') ||
+        lower.contains('"nodes"');
+  }
+
+  /// يتحقق من المرشّحين المفتوحين بمصافحة WebSocket حقيقية (بالتوازي).
+  Future<List<LanCandidate>> verifyCandidates(
+    List<LanCandidate> candidates, {
+    int? limit,
+  }) async {
+    final List<int> pending = <int>[
+      for (int i = 0; i < candidates.length; i++)
+        if (!candidates[i].looksLikeRuView && !candidates[i].verified) i,
+    ];
+    if (pending.isEmpty) return candidates;
+
+    pending.sort((int a, int b) =>
+        candidates[b].score.compareTo(candidates[a].score));
+    final List<int> selected =
+        pending.take(limit ?? maxVerifications).toList(growable: false);
+
+    final Map<int, bool> results = <int, bool>{};
+    await Future.wait<void>(<Future<void>>[
+      for (final int index in selected)
+        verifySensing(candidates[index].host, candidates[index].port)
+            .then<void>((bool ok) {
+          results[index] = ok;
+        }),
+    ]);
+
+    final List<LanCandidate> updated = List<LanCandidate>.from(candidates);
+    results.forEach((int index, bool ok) {
+      if (ok) updated[index] = updated[index].copyWith(verified: true);
+    });
+    return updated;
+  }
+
   /// مسح كامل. يعيد المرشّحين مرتبين بالأفضلية.
   Future<List<LanCandidate>> scan({
     required NetworkContext context,
@@ -389,6 +568,8 @@ class LanScanner {
       extra: savedHosts,
     );
     final List<LanCandidate> found = <LanCandidate>[];
+    final Set<String> probedHosts = <String>{};
+    int probes = 0;
 
     // كل (مضيف، منفذ) كهدف مستقل: المنافذ تُفحص بالتوازي أيضًا.
     final List<({String host, int port})> targets =
@@ -403,6 +584,8 @@ class LanScanner {
       final List<({String host, int port})> batch =
           targets.sublist(index, end);
 
+      probes += batch.length;
+      probedHosts.addAll(batch.map((({String host, int port}) t) => t.host));
       final List<Future<void>> tasks = <Future<void>>[];
       for (final ({String host, int port}) target in batch) {
         tasks.add(
@@ -419,7 +602,7 @@ class LanScanner {
       await Future.wait<void>(tasks);
 
       // توقّف مبكر: وجدنا خادم RuView — لا داعي لإكمال بقية الشبكة.
-      if (found.any((LanCandidate candidate) => candidate.looksLikeRuView)) {
+      if (found.any((LanCandidate candidate) => candidate.isGatewayCandidate)) {
         break;
       }
     }
@@ -427,10 +610,10 @@ class LanScanner {
     // إن حسمنا الخادم من فحص TCP فلا داعي لانتظار مهلة البثّ كلها؛
     // البثّ يبقى مفيدًا فقط عندما لا نعرف هوية أي خادم (عزل عملاء مثلًا).
     final List<LanCandidate> announced =
-        found.any((LanCandidate candidate) => candidate.looksLikeRuView)
+        found.any((LanCandidate candidate) => candidate.isGatewayCandidate)
             ? const <LanCandidate>[]
             : await broadcast;
-    final List<LanCandidate> all = <LanCandidate>[...found];
+    List<LanCandidate> all = <LanCandidate>[...found];
     for (final LanCandidate candidate in announced) {
       final bool exists = all.any(
         (LanCandidate other) =>
@@ -438,6 +621,22 @@ class LanScanner {
       );
       if (!exists) all.add(candidate);
     }
+
+    // التحقق القاطع: منفذ مفتوح ≠ بوابة RuView. نفتح WebSocket حقيقيًا
+    // وننتظر إطار استشعار، فلا تُعرض «بوابة» وهمية أبدًا.
+    all = await verifyCandidates(all);
+
+    final LanScanReport report = LanScanReport(
+      networkLabel: context.label,
+      hostsScanned: probedHosts.length,
+      portsScanned: ports.length,
+      probes: probes,
+      openPorts: all.where((LanCandidate c) => !c.isGatewayCandidate).length,
+      gateways: all.where((LanCandidate c) => c.isGatewayCandidate).length,
+      durationMs: watch.elapsedMilliseconds,
+      deep: deep,
+    );
+    lastReport = report;
     return ranked(all);
   }
 

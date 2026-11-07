@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ruview_wifi/data/models/connection_settings.dart';
 import 'package:ruview_wifi/data/services/lan_scanner.dart';
@@ -350,6 +353,114 @@ void main() {
       expect(changes.first, isTrue);
       expect(fingerprints, contains('192.168.43'));
       expect(changes.where((bool value) => value).length, 2);
+    });
+  });
+
+  group('التحقق القاطع عبر WebSocket (فحص حقيقي)', () {
+    test('يقبل منفذًا يُكمل المصافحة ويرسل إطار sensing_update', () async {
+      final HttpServer server =
+          await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((HttpRequest request) async {
+        try {
+          if (!WebSocketTransformer.isUpgradeRequest(request)) {
+            request.response.statusCode = HttpStatus.notFound;
+            await request.response.close();
+            return;
+          }
+          final WebSocket socket = await WebSocketTransformer.upgrade(request);
+          socket.add(jsonEncode(<String, dynamic>{
+            'type': 'sensing_update',
+            'tick': 1,
+            'classification': <String, dynamic>{
+              'presence': true,
+              'motion_level': 'present_still',
+            },
+            'features': <String, dynamic>{'motion_band_power': 0.4},
+          }));
+          await Future<void>.delayed(const Duration(milliseconds: 150));
+          await socket.close();
+        } catch (_) {
+          // العميل أغلق مبكرًا — لا يهم في هذا الاختبار.
+        }
+      });
+
+      final LanScanner scanner = LanScanner(
+        useBroadcast: false,
+        verifyTimeout: const Duration(milliseconds: 1200),
+      );
+      final bool verified =
+          await scanner.verifySensing('127.0.0.1', server.port);
+
+      expect(verified, isTrue);
+      await server.close(force: true);
+    });
+
+    test('يرفض خادم HTTP عاديًا يفتح المنفذ بلا استشعار', () async {
+      final HttpServer server =
+          await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      server.listen((HttpRequest request) async {
+        request.response.write('<html><body>hello</body></html>');
+        await request.response.close();
+      });
+
+      final LanScanner scanner = LanScanner(
+        useBroadcast: false,
+        verifyTimeout: const Duration(milliseconds: 600),
+      );
+      final bool verified =
+          await scanner.verifySensing('127.0.0.1', server.port);
+
+      expect(verified, isFalse);
+      await server.close(force: true);
+    });
+
+    test('تمييز الإطار الصالح عن أي نص آخر', () {
+      expect(LanScanner.isSensingPayload('{"type":"sensing_update"}'), isTrue);
+      expect(LanScanner.isSensingPayload('{"features":{"variance":1}}'), isTrue);
+      expect(LanScanner.isSensingPayload('{"nodes":[]}'), isTrue);
+      expect(LanScanner.isSensingPayload('<html>404 not found</html>'), isFalse);
+      expect(LanScanner.isSensingPayload('OK'), isFalse);
+      expect(LanScanner.isSensingPayload(null), isFalse);
+    });
+
+    test('منفذ مفتوح لا يُوسم كبوابة، والتحقّق يرفع درجته', () {
+      const LanCandidate open = LanCandidate(
+        host: '192.168.8.142',
+        port: 8000,
+        latencyMs: 114,
+      );
+      const LanCandidate verified = LanCandidate(
+        host: '192.168.8.142',
+        port: 8000,
+        latencyMs: 114,
+        verified: true,
+      );
+
+      expect(open.isGatewayCandidate, isFalse);
+      expect(open.sourceLabel, contains('ليست RuView'));
+      expect(verified.isGatewayCandidate, isTrue);
+      expect(verified.sourceLabel, contains('مُتحقَّق'));
+      expect(verified.score, greaterThan(open.score));
+      expect(open.copyWith(verified: true).verified, isTrue);
+    });
+
+    test('تقرير المسح يلخّص الأرقام الفعلية بصدق', () {
+      const LanScanReport report = LanScanReport(
+        networkLabel: '192.168.8.142 · بوابة 192.168.8.1',
+        hostsScanned: 254,
+        portsScanned: 5,
+        probes: 1270,
+        openPorts: 2,
+        gateways: 0,
+        durationMs: 3200,
+        deep: true,
+      );
+
+      final String summary = report.arabicSummary;
+      expect(summary, contains('254'));
+      expect(summary, contains('1270'));
+      expect(summary, contains('لا بوابة RuView'));
+      expect(report.toJson()['gateways'], 0);
     });
   });
 }

@@ -228,3 +228,19 @@ flutter test
 - **الأوامر في التطبيق:** `lib/core/l10n/termux_guide.dart` يحمل نص البوابة
   الجاهز للنسخ — نسخة من نفس البوابة التي اختُبرت عبر `/health` ومصافحة
   WebSocket وإطارات `sensing_update`.
+
+## التحقق القاطع من البوابة (1.6.1)
+
+`LanScanner.probe` يثبت فقط أن المنفذ **مفتوح** — وهذا لا يعني RuView. لذلك:
+
+1. `probe` يحفظ بصمة HTTP الخفيفة في `looksLikeRuView`.
+2. `LanScanner.verifySensing(host, port)` يفتح `WebSocket` فعليًا على
+   `/ws/sensing` ثم `/api/v1/stream/pose`، وينتظر أول رسالة، ويقبلها فقط إذا
+   اجتازت `isSensingPayload` (JSON يبدأ بـ `{` ويحمل `sensing_update` أو
+   `classification` أو `features` أو `nodes`).
+3. `LanCandidate.verified` يمثّل هذا الإثبات، ودرجته في الترتيب +200.
+4. `ConnectionViewModel` يجرّب المرشّحين المُتحقَّقين أولًا، ثم منفذين مفتوحين
+   كحد أقصى (احتياطًا لبوابة بطيئة في أول إطار) — ولا يحفظ نقطة كـ«آخر اتصال
+   ناجح» إلا بعد وصول إطارات حقيقية.
+5. `LanScanReport` يحمل أرقام المسح الفعلية (عناوين، منافذ، محاولات، مفتوح،
+   بوابات، زمن) وتُعرض في بطاقة الاتصال التلقائي.

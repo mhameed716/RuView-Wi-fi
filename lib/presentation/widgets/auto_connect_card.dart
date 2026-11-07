@@ -28,8 +28,11 @@ class AutoConnectCard extends StatelessWidget {
     final Color color = connected
         ? AppColors.emerald
         : (viewModel.isDiscovering ? AppColors.cyan : AppColors.idle);
-    final List<LanCandidate> candidates =
-        viewModel.candidates.take(3).toList(growable: false);
+    final List<LanCandidate> gateways =
+        viewModel.gatewayCandidates.take(3).toList(growable: false);
+    final List<LanCandidate> openPorts =
+        viewModel.openPortCandidates.take(4).toList(growable: false);
+    final LanScanReport? report = viewModel.scanReport;
 
     return NeonCard(
       glowColor: color,
@@ -146,18 +149,18 @@ class AutoConnectCard extends StatelessWidget {
               ),
             ),
           ],
-          if (candidates.isNotEmpty) ...<Widget>[
+          if (gateways.isNotEmpty) ...<Widget>[
             const SizedBox(height: 12),
             const Text(
-              'مرشّحون مكتشفون (اضغط للاتصال)',
+              'بوابات RuView مُتحقَّق منها (اضغط للاتصال)',
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.w700,
-                color: AppColors.textSecondary,
+                color: AppColors.emerald,
               ),
             ),
             const SizedBox(height: 6),
-            for (final LanCandidate candidate in candidates)
+            for (final LanCandidate candidate in gateways)
               GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => unawaited(
@@ -168,13 +171,11 @@ class AutoConnectCard extends StatelessWidget {
                   child: Row(
                     children: <Widget>[
                       Icon(
-                        candidate.looksLikeRuView
+                        candidate.verified
                             ? Icons.verified_rounded
-                            : Icons.circle,
-                        size: candidate.looksLikeRuView ? 13 : 7,
-                        color: candidate.looksLikeRuView
-                            ? AppColors.emerald
-                            : AppColors.idle,
+                            : Icons.check_circle_outline_rounded,
+                        size: 14,
+                        color: AppColors.emerald,
                       ),
                       const SizedBox(width: 8),
                       Expanded(
@@ -207,6 +208,70 @@ class AutoConnectCard extends StatelessWidget {
                   ),
                 ),
               ),
+          ] else if (openPorts.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            const Text(
+              'منافذ مفتوحة — ليست بوابة RuView',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: AppColors.warning,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'استجاب المنفذ لكنه لم يُكمل مصافحة WebSocket ولا أرسل أي إطار '
+              'استشعار — لذلك لا يُعدّ بوابة ولا يُجرَّب تلقائيًا.',
+              style: TextStyle(
+                fontSize: 9.5,
+                height: 1.5,
+                color: AppColors.textMuted,
+              ),
+            ),
+            const SizedBox(height: 6),
+            for (final LanCandidate candidate in openPorts)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.remove_circle_outline_rounded,
+                      size: 13,
+                      color: AppColors.warning,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        candidate.label,
+                        textDirection: TextDirection.ltr,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                    Text(
+                      '${candidate.latencyMs}ms',
+                      style: const TextStyle(
+                        fontSize: 9,
+                        color: AppColors.idle,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+          if (report != null) ...<Widget>[
+            const SizedBox(height: 8),
+            Text(
+              report.arabicSummary,
+              style: const TextStyle(
+                fontSize: 9,
+                height: 1.5,
+                color: AppColors.textMuted,
+              ),
+            ),
           ],
           const SizedBox(height: 14),
           Row(
